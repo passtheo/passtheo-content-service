@@ -1,0 +1,123 @@
+package com.passtheo.content.domain.entity;
+
+import com.passtheo.content.domain.enums.SessionStatus;
+import com.passtheo.content.domain.enums.SessionType;
+import com.passtheo.shared.core.entity.BaseEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Table;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * Represents a practice study session for a student.
+ */
+@Entity
+@Table(name = "study_sessions")
+public class StudySession extends BaseEntity {
+
+    @Column(name = "keycloak_user_id", nullable = false)
+    private UUID keycloakUserId;
+
+    @Column(name = "product_code", nullable = false, length = 50)
+    private String productCode;
+
+    @Column(name = "domain_code", length = 50)
+    private String domainCode;
+
+    @Column(name = "topic_code", length = 50)
+    private String topicCode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "session_type", nullable = false, length = 20)
+    private SessionType sessionType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private SessionStatus status;
+
+    @Column(name = "total_questions", nullable = false)
+    private int totalQuestions;
+
+    @Column(name = "answered_count", nullable = false)
+    private int answeredCount;
+
+    @Column(name = "correct_count", nullable = false)
+    private int correctCount;
+
+    @Column(name = "accuracy_percent", precision = 5, scale = 2)
+    private BigDecimal accuracyPercent;
+
+    @Column(name = "started_at", nullable = false)
+    private Instant startedAt;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
+    @Column(name = "last_activity_at", nullable = false)
+    private Instant lastActivityAt;
+
+    @Column(name = "time_spent_seconds", nullable = false)
+    private int timeSpentSeconds;
+
+    protected StudySession() {}
+
+    /**
+     * Creates a new study session.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @param domainCode     the domain code (nullable for mixed)
+     * @param topicCode      the topic code (nullable for all topics)
+     * @param sessionType    the session type
+     * @param totalQuestions  the total number of questions
+     */
+    public StudySession(UUID keycloakUserId, String productCode, String domainCode,
+                        String topicCode, SessionType sessionType, int totalQuestions) {
+        this.keycloakUserId = keycloakUserId;
+        this.productCode = productCode;
+        this.domainCode = domainCode;
+        this.topicCode = topicCode;
+        this.sessionType = sessionType;
+        this.status = SessionStatus.IN_PROGRESS;
+        this.totalQuestions = totalQuestions;
+        this.answeredCount = 0;
+        this.correctCount = 0;
+        this.startedAt = Instant.now();
+        this.lastActivityAt = Instant.now();
+        this.timeSpentSeconds = 0;
+    }
+
+    public UUID getKeycloakUserId() { return keycloakUserId; }
+    public void setKeycloakUserId(UUID keycloakUserId) { this.keycloakUserId = keycloakUserId; }
+    public String getProductCode() { return productCode; }
+    public void setProductCode(String productCode) { this.productCode = productCode; }
+    public String getDomainCode() { return domainCode; }
+    public void setDomainCode(String domainCode) { this.domainCode = domainCode; }
+    public String getTopicCode() { return topicCode; }
+    public void setTopicCode(String topicCode) { this.topicCode = topicCode; }
+    public SessionType getSessionType() { return sessionType; }
+    public void setSessionType(SessionType sessionType) { this.sessionType = sessionType; }
+    public SessionStatus getStatus() { return status; }
+    public void setStatus(SessionStatus status) { this.status = status; }
+    public int getTotalQuestions() { return totalQuestions; }
+    public void setTotalQuestions(int totalQuestions) { this.totalQuestions = totalQuestions; }
+    public int getAnsweredCount() { return answeredCount; }
+    public void setAnsweredCount(int answeredCount) { this.answeredCount = answeredCount; }
+    public int getCorrectCount() { return correctCount; }
+    public void setCorrectCount(int correctCount) { this.correctCount = correctCount; }
+    public BigDecimal getAccuracyPercent() { return accuracyPercent; }
+    public void setAccuracyPercent(BigDecimal accuracyPercent) { this.accuracyPercent = accuracyPercent; }
+    public Instant getStartedAt() { return startedAt; }
+    public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
+    public Instant getCompletedAt() { return completedAt; }
+    public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
+    public Instant getLastActivityAt() { return lastActivityAt; }
+    public void setLastActivityAt(Instant lastActivityAt) { this.lastActivityAt = lastActivityAt; }
+    public int getTimeSpentSeconds() { return timeSpentSeconds; }
+    public void setTimeSpentSeconds(int timeSpentSeconds) { this.timeSpentSeconds = timeSpentSeconds; }
+}

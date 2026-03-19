@@ -1,0 +1,142 @@
+spring:
+  application:
+    name: passtheo-content-service
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/content_db}
+    username: ${SPRING_DATASOURCE_USERNAME:content_service_app}
+    password: ${SPRING_DATASOURCE_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        interceptor.classes: com.passtheo.shared.core.kafka.TracingKafkaProducerInterceptor
+    consumer:
+      group-id: passtheo-content-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      properties:
+        spring.json.trusted.packages: "*"
+        interceptor.classes: com.passtheo.shared.core.kafka.TracingKafkaConsumerInterceptor
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:3}
+
+server:
+  port: ${SERVER_PORT:8087}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.passtheo: DEBUG
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+  file:
+    path: logs
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] [%X{tenantId:-}] %-5level %logger{36} - %msg%n"
+
+passtheo:
+  logging:
+    structured:
+      enabled: true
+  strapi:
+    base-url: ${STRAPI_BASE_URL:http://localhost:1337}
+    api-token: ${STRAPI_API_TOKEN:strapi-api-token}
+  subscription-service:
+    base-url: ${SUBSCRIPTION_SERVICE_URL:http://localhost:8083}
+  content-cache:
+    ttl-seconds: ${CONTENT_CACHE_TTL_SECONDS:3600}
+  free-tier:
+    daily-question-limit: 10
+    weekly-exam-limit: 1
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      strapi:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+      subscription:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+
+outbox:
+  poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+  show-actuator: false
+  paths-to-match: /api/**
+  packages-to-scan: com.passtheo.content.controller

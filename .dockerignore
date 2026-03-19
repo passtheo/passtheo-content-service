@@ -1,0 +1,10 @@
+.git
+.gradle
+build
+bin
+logs
+.idea
+*.iml
+*.iws
+*.ipr
+plan

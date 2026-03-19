@@ -1,0 +1,161 @@
+package com.passtheo.content.service;
+
+import com.passtheo.content.domain.entity.QuestionProgress;
+import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.content.repository.QuestionProgressRepository;
+import jakarta.annotation.Nonnull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Selects optimal questions for practice sessions using a modified SM-2 algorithm.
+ * Priority order: (1) due reviews, (2) weak questions, (3) new/unseen, (4) familiar reinforcement.
+ * Max interval capped at 14 days for exam prep (not lifetime learning).
+ */
+@Service
+public class QuestionSelectionService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(QuestionSelectionService.class);
+    private static final int WEAK_CONSECUTIVE_THRESHOLD = 2;
+
+    private final QuestionProgressRepository progressRepository;
+    private final StrapiContentCache strapiContentCache;
+
+    /**
+     * Constructs the question selection service.
+     *
+     * @param progressRepository the question progress repository
+     * @param strapiContentCache the Strapi content cache
+     */
+    public QuestionSelectionService(QuestionProgressRepository progressRepository,
+                                    StrapiContentCache strapiContentCache) {
+        this.progressRepository = progressRepository;
+        this.strapiContentCache = strapiContentCache;
+    }
+
+    /**
+     * Selects N questions for a practice session using spaced repetition priorities.
+     * Coverage guarantee: students must see ALL questions at least once.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param domainCode  the domain code (nullable for mixed/all domains)
+     * @param count       number of questions to select
+     * @param locale      content locale for Strapi lookups
+     * @return ordered list of Strapi question IDs
+     */
+    public List<String> selectQuestions(@Nonnull UUID userId, @Nonnull String productCode,
+                                        String domainCode, int count, @Nonnull String locale) {
+        List<String> selected = new ArrayList<>();
+        int dueAdded = 0;
+        int weakAdded = 0;
+        int newAdded = 0;
+        int fillAdded = 0;
+
+        // Priority 1: Due reviews (nextReviewAt < now) — most overdue first
+        List<QuestionProgress> dueReviews = progressRepository
+                .findDueReviews(userId, productCode, domainCode, Instant.now());
+        dueReviews.sort(Comparator.comparing(QuestionProgress::getNextReviewAt));
+        LOG.debug("Question selection P1 due-reviews: user={}, available={}", userId, dueReviews.size());
+        for (QuestionProgress qp : dueReviews) {
+            if (selected.size() >= count) {
+                break;
+            }
+            selected.add(qp.getStrapiQuestionId());
+            dueAdded++;
+        }
+
+        // Priority 2: Weak questions (LEARNING with consecutiveCorrect < threshold)
+        if (selected.size() < count) {
+            List<QuestionProgress> weak = progressRepository
+                    .findWeak(userId, productCode, domainCode, WEAK_CONSECUTIVE_THRESHOLD);
+            LOG.debug("Question selection P2 weak: user={}, available={}", userId, weak.size());
+            for (QuestionProgress qp : weak) {
+                if (selected.size() >= count) {
+                    break;
+                }
+                if (!selected.contains(qp.getStrapiQuestionId())) {
+                    selected.add(qp.getStrapiQuestionId());
+                    weakAdded++;
+                }
+            }
+        }
+
+        // Priority 3: New (unseen) questions — shuffled randomly for variety
+        if (selected.size() < count) {
+            List<String> allQuestionIds = getAllQuestionIds(productCode, domainCode, locale);
+            Set<String> seenIds = progressRepository
+                    .findSeenQuestionIds(userId, productCode, domainCode);
+
+            List<String> newIds = allQuestionIds.stream()
+                    .filter(id -> !seenIds.contains(id) && !selected.contains(id))
+                    .collect(Collectors.toCollection(ArrayList::new));
+            Collections.shuffle(newIds);
+            LOG.debug("Question selection P3 new: user={}, total={}, seen={}, available={}",
+                    userId, allQuestionIds.size(), seenIds.size(), newIds.size());
+
+            for (String id : newIds) {
+                if (selected.size() >= count) {
+                    break;
+                }
+                selected.add(id);
+                newAdded++;
+            }
+        }
+
+        // Priority 4: Fill with FAMILIAR questions closest to review date
+        if (selected.size() < count) {
+            List<QuestionProgress> familiar = progressRepository
+                    .findFamiliarSorted(userId, productCode, domainCode);
+            LOG.debug("Question selection P4 familiar-fill: user={}, available={}", userId, familiar.size());
+            for (QuestionProgress qp : familiar) {
+                if (selected.size() >= count) {
+                    break;
+                }
+                if (!selected.contains(qp.getStrapiQuestionId())) {
+                    selected.add(qp.getStrapiQuestionId());
+                    fillAdded++;
+                }
+            }
+        }
+
+        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, total={} [due={}, weak={}, new={}, fill={}]",
+                userId, productCode, domainCode, selected.size(),
+                dueAdded, weakAdded, newAdded, fillAdded);
+
+        if (selected.isEmpty()) {
+            LOG.warn("No questions selected: user={}, product={}, domain={}, requestedCount={}",
+                    userId, productCode, domainCode, count);
+        }
+
+        return List.copyOf(selected);
+    }
+
+    /**
+     * Gets all question IDs for a product/domain from Strapi cache.
+     *
+     * @param productCode the product code
+     * @param domainCode  the domain code (nullable for all domains)
+     * @param locale      the content locale
+     * @return list of question IDs
+     */
+    private List<String> getAllQuestionIds(@Nonnull String productCode, String domainCode,
+                                           @Nonnull String locale) {
+        if (domainCode != null && !domainCode.isBlank()) {
+            return strapiContentCache.getQuestionsByDomain(domainCode, locale).stream()
+                    .map(q -> q.id())
+                    .toList();
+        }
+        return strapiContentCache.getQuestionIds(productCode, locale);
+    }
+}

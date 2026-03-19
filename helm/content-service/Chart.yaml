@@ -1,0 +1,6 @@
+apiVersion: v2
+name: passtheo-content-service
+description: PassTheo Content Service - Core learning engine
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

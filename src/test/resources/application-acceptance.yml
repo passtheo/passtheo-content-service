@@ -1,0 +1,78 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres?currentSchema=content_service
+    username: postgres
+    password: password123
+    driver-class-name: org.postgresql.Driver
+
+  flyway:
+    enabled: false
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        default_schema: content_service
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+        hbm2ddl:
+          auto: none
+
+  sql:
+    init:
+      mode: never
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis123
+      database: 3
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    listener:
+      auto-startup: false
+    producer:
+      acks: 1
+      retries: 0
+      properties:
+        interceptor.classes: ''
+    consumer:
+      auto-offset-reset: earliest
+      properties:
+        interceptor.classes: ''
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+
+passtheo:
+  security:
+    permit-all: true
+  strapi:
+    base-url: http://localhost:1337
+    api-token: test-token
+  subscription-service:
+    base-url: http://localhost:8083
+  content-cache:
+    ttl-seconds: 60
+  free-tier:
+    daily-question-limit: 10
+    weekly-exam-limit: 1
+
+outbox:
+  poll-interval-ms: 60000
+
+logging:
+  level:
+    root: WARN
+    com.passtheo: DEBUG
+    org.flywaydb: INFO
