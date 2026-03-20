@@ -2,6 +2,7 @@ package com.passtheo.content.unit;
 
 import com.passtheo.content.domain.entity.Streak;
 import com.passtheo.content.domain.valueobject.StreakResult;
+import com.passtheo.content.repository.OutboxEventRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.service.StreakService;
 import com.passtheo.shared.core.context.TenantContext;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 class StreakServiceTest {
 
     @Mock private StreakRepository streakRepository;
+    @Mock private OutboxEventRepository outboxEventRepository;
 
     private StreakService service;
 
@@ -37,7 +39,7 @@ class StreakServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new StreakService(streakRepository);
+        service = new StreakService(streakRepository, outboxEventRepository);
         TenantContext.set(TENANT_ID);
     }
 

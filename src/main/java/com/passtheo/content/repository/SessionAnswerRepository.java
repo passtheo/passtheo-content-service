@@ -23,6 +23,16 @@ public interface SessionAnswerRepository extends JpaRepository<SessionAnswer, UU
     List<SessionAnswer> findBySessionIdOrderByQuestionOrderAsc(@Nonnull UUID sessionId);
 
     /**
+     * Finds an existing answer for a specific question in a session (duplicate check).
+     *
+     * @param sessionId        the session ID
+     * @param strapiQuestionId the Strapi question ID
+     * @return the existing answer, if present
+     */
+    java.util.Optional<SessionAnswer> findBySessionIdAndStrapiQuestionId(
+            @Nonnull UUID sessionId, @Nonnull String strapiQuestionId);
+
+    /**
      * Counts answers in a session.
      *
      * @param sessionId the session ID

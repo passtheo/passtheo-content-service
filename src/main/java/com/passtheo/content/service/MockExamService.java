@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.domain.entity.ExamAnswer;
 import com.passtheo.content.domain.entity.ExamAttempt;
+import com.passtheo.content.domain.entity.OutboxEvent;
 import com.passtheo.content.domain.enums.ExamType;
+import com.passtheo.content.domain.enums.OutboxStatus;
 import com.passtheo.content.dto.request.StartExamRequest;
 import com.passtheo.content.dto.request.SubmitExamRequest;
 import com.passtheo.content.dto.response.AnswerResultDto;
@@ -18,9 +20,12 @@ import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.repository.ExamAnswerRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
+import com.passtheo.content.repository.OutboxEventRepository;
 import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.core.exception.ErrorCode;
+import com.passtheo.shared.events.config.KafkaTopic;
+import com.passtheo.shared.events.content.ExamCompletedEvent;
 import org.springframework.http.HttpStatus;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -58,6 +63,7 @@ public class MockExamService {
     private final AnswerProcessingService answerProcessingService;
     private final AchievementService achievementService;
     private final ReadinessService readinessService;
+    private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -69,6 +75,7 @@ public class MockExamService {
      * @param answerProcessingService answer grading
      * @param achievementService     achievement checking
      * @param readinessService       readiness score calculator
+     * @param outboxEventRepository  outbox event repository
      * @param objectMapper           JSON serializer
      */
     public MockExamService(ExamAttemptRepository examAttemptRepository,
@@ -77,6 +84,7 @@ public class MockExamService {
                            AnswerProcessingService answerProcessingService,
                            AchievementService achievementService,
                            ReadinessService readinessService,
+                           OutboxEventRepository outboxEventRepository,
                            ObjectMapper objectMapper) {
         this.examAttemptRepository = examAttemptRepository;
         this.examAnswerRepository = examAnswerRepository;
@@ -84,6 +92,7 @@ public class MockExamService {
         this.answerProcessingService = answerProcessingService;
         this.achievementService = achievementService;
         this.readinessService = readinessService;
+        this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -280,6 +289,14 @@ public class MockExamService {
         List<EarnedAchievementDto> achievements = achievementService
                 .checkAchievements(userId, attempt.getProductCode());
 
+        // Publish exam.completed outbox event
+        List<String> weakDomains = domainStats.entrySet().stream()
+                .filter(e -> e.getValue()[1] > 0 && (double) e.getValue()[0] / e.getValue()[1] < 0.6)
+                .map(Map.Entry::getKey)
+                .toList();
+        publishExamCompletedEvent(TenantContext.get(), userId, examId,
+                attempt.getProductCode(), passed, correctCount, totalQuestions, scorePercent, weakDomains);
+
         LOG.info("Mock exam submitted: id={}, user={}, correct={}/{}, passed={}",
                 examId, userId, correctCount, totalQuestions, passed);
 
@@ -311,6 +328,27 @@ public class MockExamService {
                         a.getTotalQuestions(), a.getScorePercent().doubleValue(),
                         a.getCompletedAt()))
                 .toList();
+    }
+
+    private void publishExamCompletedEvent(java.util.UUID tenantId, java.util.UUID userId,
+                                            java.util.UUID examAttemptId, String productCode,
+                                            boolean passed, int correctCount, int totalQuestions,
+                                            double scorePercent, List<String> weakDomains) {
+        try {
+            ExamCompletedEvent event = ExamCompletedEvent.create(
+                    tenantId, userId, examAttemptId, productCode,
+                    passed, correctCount, totalQuestions, scorePercent, weakDomains);
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setTenantId(tenantId);
+            outbox.setEventType(event.eventType());
+            outbox.setTopic(KafkaTopic.CONTENT_EVENTS);
+            outbox.setPayload(objectMapper.writeValueAsString(event));
+            outbox.setStatus(OutboxStatus.PENDING);
+            outbox.setPartitionKey(userId.toString());
+            outboxEventRepository.save(outbox);
+        } catch (JsonProcessingException e) {
+            LOG.error("Failed to serialize ExamCompletedEvent for user={}", userId, e);
+        }
     }
 
     private String serializeJson(Object obj) {

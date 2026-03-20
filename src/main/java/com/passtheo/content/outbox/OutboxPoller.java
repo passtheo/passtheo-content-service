@@ -47,7 +47,8 @@ public class OutboxPoller {
 
         for (OutboxEvent event : pending) {
             try {
-                kafkaTemplate.send(event.getTopic(), event.getTenantId().toString(), event.getPayload())
+                String key = event.getPartitionKey() != null ? event.getPartitionKey() : event.getTenantId().toString();
+                kafkaTemplate.send(event.getTopic(), key, event.getPayload())
                         .whenComplete((result, ex) -> {
                             if (ex != null) {
                                 LOG.error("Failed to send outbox event {} to Kafka: {}",
