@@ -29,7 +29,7 @@ import java.util.Map;
 public class StrapiClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(StrapiClient.class);
-    private static final String POPULATE_QUESTION = "populate=answerOptions,explanation,imageRegions,dragTargets,image,video";
+    private static final String POPULATE_QUESTION = "populate=answerOptions,explanation,imageRegions,dragTargets,image,video,correctBoolean";
 
     private final WebClient webClient;
 
@@ -51,7 +51,7 @@ public class StrapiClient {
     public List<StrapiCountryDto> getCountries(@Nonnull String locale) {
         LOG.debug("Fetching countries from Strapi, locale={}", locale);
         return fetchList("/api/countries?filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -65,7 +65,7 @@ public class StrapiClient {
         LOG.debug("Fetching product types from Strapi, country={}, locale={}", countryCode, locale);
         return fetchList("/api/product-types?filters[country][code][$eq]=" + countryCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -79,7 +79,7 @@ public class StrapiClient {
         LOG.debug("Fetching products from Strapi, productType={}, locale={}", productTypeCode, locale);
         return fetchList("/api/products?filters[productType][code][$eq]=" + productTypeCode
                 + "&filters[isActive][$eq]=true&populate=examConfig&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -93,7 +93,7 @@ public class StrapiClient {
         LOG.debug("Fetching domains from Strapi, product={}, locale={}", productCode, locale);
         return fetchList("/api/domains?filters[product][code][$eq]=" + productCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -107,7 +107,7 @@ public class StrapiClient {
         LOG.debug("Fetching topics from Strapi, domain={}, locale={}", domainCode, locale);
         return fetchList("/api/topics?filters[domain][code][$eq]=" + domainCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -122,7 +122,7 @@ public class StrapiClient {
         return fetchList("/api/questions?filters[topic][code][$eq]=" + topicCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=100",
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -137,7 +137,7 @@ public class StrapiClient {
         return fetchList("/api/questions?filters[domain][code][$eq]=" + domainCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=200",
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -152,7 +152,7 @@ public class StrapiClient {
         return fetchList("/api/questions?filters[product][code][$eq]=" + productCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=500",
-                new ParameterizedTypeReference<>() {});
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -168,7 +168,7 @@ public class StrapiClient {
             return webClient.get()
                     .uri("/api/questions/" + questionId + "?" + POPULATE_QUESTION + "&locale=" + locale)
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<Map<String, StrapiQuestionDto>>() {})
+                    .bodyToMono(new ParameterizedTypeReference<Map<String, StrapiQuestionDto>>() { })
                     .map(r -> r.get("data"))
                     .block();
         } catch (Exception e) {
@@ -186,20 +186,25 @@ public class StrapiClient {
     public StrapiExamConfigDto getExamConfig(@Nonnull String productCode) {
         LOG.debug("Fetching exam config from Strapi, product={}", productCode);
         List<StrapiExamConfigDto> configs = fetchList(
-                "/api/exam-configs?filters[product][code][$eq]=" + productCode,
-                new ParameterizedTypeReference<>() {});
+                "/api/exam-configs?filters[product][code][$eq]=" + productCode
+                        + "&populate=domainWeights",
+                new ParameterizedTypeReference<>() { });
         return configs.isEmpty() ? null : configs.getFirst();
     }
 
     /**
      * Fetches all achievement definitions.
      *
+     * @param productCode the product code
      * @return list of achievements
      */
-    public List<StrapiAchievementDefDto> getAchievements() {
-        LOG.debug("Fetching achievements from Strapi");
-        return fetchList("/api/achievements?filters[isActive][$eq]=true&sort=sortOrder",
-                new ParameterizedTypeReference<>() {});
+    public List<StrapiAchievementDefDto> getAchievements(@Nonnull String productCode) {
+        LOG.debug("Fetching achievements from Strapi, productCode={}", productCode);
+        return fetchList(
+                "/api/achievements?filters[$or][0][product][code][$eq]=" + productCode
+                        + "&filters[$or][1][product][$null]=true"
+                        + "&filters[isActive][$eq]=true&sort=sortOrder",
+                new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -218,7 +223,7 @@ public class StrapiClient {
         if (category != null && !category.isBlank()) {
             url += "&filters[signCategory][$eq]=" + category;
         }
-        return fetchList(url, new ParameterizedTypeReference<>() {});
+        return fetchList(url, new ParameterizedTypeReference<>() { });
     }
 
     /**
@@ -231,8 +236,9 @@ public class StrapiClient {
     public List<StrapiLessonDto> getLessons(@Nonnull String topicCode, @Nonnull String locale) {
         LOG.debug("Fetching lessons from Strapi, topic={}, locale={}", topicCode, locale);
         return fetchList("/api/lessons?filters[topic][code][$eq]=" + topicCode
-                + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() {});
+                + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale
+                + "&populate[sections][populate]=*",
+                new ParameterizedTypeReference<>() { });
     }
 
     /**

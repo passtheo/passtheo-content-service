@@ -119,10 +119,16 @@ class KarateRunner {
         when(strapiClient.getQuestionsByProduct(anyString(), anyString()))
                 .thenReturn(buildAllProductQuestions());
         when(strapiClient.getQuestion(anyString(), anyString()))
-                .thenAnswer(inv -> buildSingleQuestion(inv.getArgument(0), "verkeersborden"));
+                .thenAnswer(inv -> {
+                    String questionId = inv.getArgument(0);
+                    // If questionId is already a documentId (starts with "doc-"), use it as-is
+                    // Otherwise, assume it's an old-style ID and convert it
+                    String documentId = questionId.startsWith("doc-") ? questionId : "doc-" + questionId;
+                    return buildSingleQuestion(questionId, documentId, "verkeersborden");
+                });
         when(strapiClient.getExamConfig(anyString()))
-                .thenReturn(new StrapiExamConfigDto(50, 30, 44, null, null, true, false, false));
-        when(strapiClient.getAchievements())
+                .thenReturn(new StrapiExamConfigDto(50, 30, 44, null, null, true, false, null, null, false));
+        when(strapiClient.getAchievements(anyString()))
                 .thenReturn(buildAchievements());
         when(strapiClient.getRoadSigns(anyString(), anyString(), any()))
                 .thenReturn(List.of());
@@ -146,7 +152,7 @@ class KarateRunner {
         return List.of(new StrapiProductDto(
                 "Auto B", "auto-b", "B", "Auto rijbewijs theorie",
                 null, null, true, false, 1,
-                new StrapiExamConfigDto(50, 30, 44, null, null, true, false, false),
+                new StrapiExamConfigDto(50, 30, 44, null, null, true, false, null, null, false),
                 8, 500));
     }
 
@@ -189,17 +195,18 @@ class KarateRunner {
 
     private List<StrapiQuestionDto> buildQuestions(String domainCode, int count) {
         return java.util.stream.IntStream.rangeClosed(1, count)
-                .mapToObj(i -> buildSingleQuestion("q-" + domainCode + "-" + i, domainCode))
+                .mapToObj(i -> buildSingleQuestion("q-" + domainCode + "-" + i, "doc-" + domainCode + "-" + i, domainCode))
                 .toList();
     }
 
-    private StrapiQuestionDto buildSingleQuestion(String id, String domainCode) {
+    private StrapiQuestionDto buildSingleQuestion(String id, String documentId, String domainCode) {
         return new StrapiQuestionDto(
                 id,
+                documentId,
                 "Wat betekent dit verkeersbord? (vraag " + id + ")",
                 "multiple_choice",
                 "medium",
-                null, null, null, null, 1,
+                null, null, null, null, null, 1,
                 List.of(
                         new StrapiQuestionDto.AnswerOptionDto("opt-a", "Verboden in te rijden", null, true, 1),
                         new StrapiQuestionDto.AnswerOptionDto("opt-b", "Gevaarlijke bocht", null, false, 2),
@@ -216,18 +223,16 @@ class KarateRunner {
     }
 
     private List<StrapiAchievementDefDto> buildAchievements() {
-        return List.of(
+        return java.util.Arrays.asList(
                 new StrapiAchievementDefDto("Eerste Stap", "first_question",
                         "Beantwoord je eerste vraag", "\uD83C\uDFAF", "\uD83D\uDD12",
-                        "questions_answered", 1, 10, true, 1),
+                        "questions_answered", 1, 10, true, 1, "auto-b"),
                 new StrapiAchievementDefDto("Beginnersluk", "ten_questions",
                         "Beantwoord 10 vragen", "\u2B50", "\uD83D\uDD12",
-                        "questions_answered", 10, 50, true, 2),
+                        "questions_answered", 10, 50, true, 2, null),
                 new StrapiAchievementDefDto("Weekkampioen", "7_day_streak",
                         "7 dagen op rij gestudeerd", "\uD83D\uDD25", "\uD83D\uDD12",
-                        "study_days_streak", 7, 100, true, 3)
+                        "study_days_streak", 7, 100, true, 3, null)
         );
     }
 }
-
-

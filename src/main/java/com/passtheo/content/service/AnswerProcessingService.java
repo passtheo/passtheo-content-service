@@ -106,10 +106,7 @@ public class AnswerProcessingService {
                 yield Map.of("selectedOptionId", Objects.requireNonNullElse(correctId, ""));
             }
             case "yes_no" -> {
-                boolean correctAnswer = question.answerOptions() != null
-                        && question.answerOptions().stream()
-                        .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
-                        .anyMatch(o -> "yes".equalsIgnoreCase(o.text()) || "ja".equalsIgnoreCase(o.text()));
+                boolean correctAnswer = Boolean.TRUE.equals(question.correctBoolean());
                 yield Map.of("answer", correctAnswer);
             }
             case "fill_in_number" -> Map.of("number",
@@ -157,16 +154,15 @@ public class AnswerProcessingService {
 
     private boolean gradeYesNo(StrapiQuestionDto question, Map<String, Object> answer) {
         Object userAnswer = answer.get("answer");
-        if (userAnswer == null || question.answerOptions() == null) {
+        if (userAnswer == null) {
+            return false;
+        }
+        if (question.correctBoolean() == null) {
+            LOG.error("yes_no question {} has null correctBoolean — rejecting as invalid", question.id());
             return false;
         }
         boolean userSaidYes = Boolean.TRUE.equals(userAnswer);
-        return question.answerOptions().stream()
-                .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
-                .anyMatch(o -> {
-                    boolean isYes = "yes".equalsIgnoreCase(o.text()) || "ja".equalsIgnoreCase(o.text());
-                    return userSaidYes == isYes;
-                });
+        return userSaidYes == question.correctBoolean();
     }
 
     private boolean gradeFillInNumber(StrapiQuestionDto question, Map<String, Object> answer) {

@@ -153,7 +153,7 @@ public class QuestionSelectionService {
                                            @Nonnull String locale) {
         if (domainCode != null && !domainCode.isBlank()) {
             return strapiContentCache.getQuestionsByDomain(domainCode, locale).stream()
-                    .map(q -> q.id())
+                    .map(q -> q.documentId())
                     .toList();
         }
         return strapiContentCache.getQuestionIds(productCode, locale);

@@ -67,8 +67,8 @@ class AchievementServiceTest {
     void firstQuestion_achievement_earned_when_threshold_met() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Eerste Stap", "first_question", "desc", "🎯", "🔒",
-                "questions_answered", 1, 10, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "questions_answered", 1, 10, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
         when(progressRepository.countAttempted(USER_ID, PRODUCT)).thenReturn(1);
         when(achievementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -84,8 +84,8 @@ class AchievementServiceTest {
     void already_earned_achievement_not_awarded_again() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Eerste Stap", "first_question", "desc", "🎯", "🔒",
-                "questions_answered", 1, 10, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "questions_answered", 1, 10, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of("first_question"));
 
         List<EarnedAchievementDto> result = achievementService.checkAchievements(USER_ID, PRODUCT);
@@ -98,8 +98,8 @@ class AchievementServiceTest {
     void streak_achievement_uses_streak_repository() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Weekkampioen", "7_day_streak", "desc", "🔥", "🔒",
-                "study_days_streak", 7, 100, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "study_days_streak", 7, 100, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
 
         com.passtheo.content.domain.entity.Streak streak =
@@ -119,8 +119,8 @@ class AchievementServiceTest {
     void exam_passed_achievement_uses_exam_repository() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Geslaagd", "first_pass", "desc", "🏆", "🔒",
-                "exams_passed", 1, 50, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "exams_passed", 1, 50, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
         when(examAttemptRepository.countByKeycloakUserIdAndProductCodeAndPassedTrue(USER_ID, PRODUCT))
                 .thenReturn(1L);
@@ -135,8 +135,8 @@ class AchievementServiceTest {
     void perfect_exam_achievement_uses_count_perfect() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Perfectionist", "perfect_exam", "desc", "💯", "🔒",
-                "perfect_exam", 1, 100, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "perfect_exam", 1, 100, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
         when(examAttemptRepository.countPerfect(USER_ID, PRODUCT)).thenReturn(1L);
         when(achievementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -150,8 +150,8 @@ class AchievementServiceTest {
     void domain_mastered_achievement_uses_domain_progress_repository() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Domeinmeester", "domain_mastered", "desc", "🎓", "🔒",
-                "domain_mastered", 1, 75, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "domain_mastered", 1, 75, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
         when(domainProgressRepository.countByKeycloakUserIdAndProductCodeAndStrength(
                 USER_ID, PRODUCT, DomainStrength.MASTERED)).thenReturn(2L);
@@ -166,8 +166,8 @@ class AchievementServiceTest {
     void below_threshold_achievement_not_earned() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Beginnersluk", "ten_questions", "desc", "⭐", "🔒",
-                "questions_answered", 10, 50, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "questions_answered", 10, 50, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
         when(progressRepository.countAttempted(USER_ID, PRODUCT)).thenReturn(5);
 
@@ -181,8 +181,8 @@ class AchievementServiceTest {
     void unknown_trigger_type_returns_zero_does_not_earn() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Unknown", "unknown_ach", "desc", "?", "?",
-                "unknown_trigger_xyz", 1, 0, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "unknown_trigger_xyz", 1, 0, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
 
         List<EarnedAchievementDto> result = achievementService.checkAchievements(USER_ID, PRODUCT);
@@ -194,8 +194,8 @@ class AchievementServiceTest {
     void saved_achievement_has_correct_tenant_id() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 "Eerste Stap", "first_question", "desc", "🎯", "🔒",
-                "questions_answered", 1, 10, true, 1);
-        when(strapiContentCache.getAchievements()).thenReturn(List.of(def));
+                "questions_answered", 1, 10, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
         when(progressRepository.countAttempted(USER_ID, PRODUCT)).thenReturn(1);
         ArgumentCaptor<EarnedAchievement> captor = ArgumentCaptor.forClass(EarnedAchievement.class);

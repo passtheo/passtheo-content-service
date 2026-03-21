@@ -98,6 +98,9 @@ public class ReadinessService {
         double readiness = (COVERAGE_WEIGHT * coverage)
                 + (ACCURACY_WEIGHT * accuracy)
                 + (EXAM_WEIGHT * exam);
+        
+        // Cap at 100 to handle floating-point precision issues
+        readiness = Math.min(100.0, readiness);
 
         ReadinessLabel label = classifyReadiness(readiness);
 

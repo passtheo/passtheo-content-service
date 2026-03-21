@@ -50,21 +50,27 @@ class AnswerProcessingServiceTest {
     // ─── YES/NO ───
 
     @Test
-    void gradeAnswer_yesNo_correctYes_returnsTrue() {
-        StrapiQuestionDto question = buildQuestion("yes_no",
-                List.of(new StrapiQuestionDto.AnswerOptionDto("a1", "Ja", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("a2", "Nee", null, false, 2)),
-                null, null);
+    void gradeAnswer_yesNo_correctBoolean_true_userAnswersTrue_returnsTrue() {
+        StrapiQuestionDto question = buildYesNoQuestion(true);
         assertThat(service.gradeAnswer(question, Map.of("answer", true))).isTrue();
     }
 
     @Test
-    void gradeAnswer_yesNo_wrongAnswer_returnsFalse() {
-        StrapiQuestionDto question = buildQuestion("yes_no",
-                List.of(new StrapiQuestionDto.AnswerOptionDto("a1", "Ja", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("a2", "Nee", null, false, 2)),
-                null, null);
+    void gradeAnswer_yesNo_correctBoolean_true_userAnswersFalse_returnsFalse() {
+        StrapiQuestionDto question = buildYesNoQuestion(true);
         assertThat(service.gradeAnswer(question, Map.of("answer", false))).isFalse();
+    }
+
+    @Test
+    void gradeAnswer_yesNo_correctBoolean_false_userAnswersFalse_returnsTrue() {
+        StrapiQuestionDto question = buildYesNoQuestion(false);
+        assertThat(service.gradeAnswer(question, Map.of("answer", false))).isTrue();
+    }
+
+    @Test
+    void gradeAnswer_yesNo_correctBoolean_null_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("yes_no", null, null, null);
+        assertThat(service.gradeAnswer(question, Map.of("answer", true))).isFalse();
     }
 
     // ─── FILL IN NUMBER ───
@@ -252,14 +258,20 @@ class AnswerProcessingServiceTest {
                                             List<StrapiQuestionDto.AnswerOptionDto> answerOptions,
                                             List<StrapiQuestionDto.ImageRegionDto> imageRegions,
                                             List<StrapiQuestionDto.DragTargetDto> dragTargets) {
-        return new StrapiQuestionDto("q-001", "Test question", interactionType, "medium",
-                null, null, null, null, 1, answerOptions, null, imageRegions, dragTargets,
+        return new StrapiQuestionDto("q-001", "doc-001", "Test question", interactionType, "medium",
+                null, null, null, null, null, 1, answerOptions, null, imageRegions, dragTargets,
+                "domain1", "topic1");
+    }
+
+    private StrapiQuestionDto buildYesNoQuestion(Boolean correctBoolean) {
+        return new StrapiQuestionDto("q-001", "doc-001", "Test yes/no question", "yes_no", "medium",
+                null, null, null, null, correctBoolean, 1, null, null, null, null,
                 "domain1", "topic1");
     }
 
     private StrapiQuestionDto buildFillInNumberQuestion(int correctNumber, int tolerance) {
-        return new StrapiQuestionDto("q-001", "What number?", "fill_in_number", "medium",
-                null, null, correctNumber, tolerance, 1, null, null, null, null,
+        return new StrapiQuestionDto("q-001", "doc-001", "What number?", "fill_in_number", "medium",
+                null, null, correctNumber, tolerance, null, 1, null, null, null, null,
                 "domain1", "topic1");
     }
 }

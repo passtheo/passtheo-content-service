@@ -16,5 +16,6 @@ public record StrapiAchievementDefDto(
     int triggerValue,
     int xpReward,
     boolean isActive,
-    int sortOrder
+    int sortOrder,
+    String productCode
 ) {}

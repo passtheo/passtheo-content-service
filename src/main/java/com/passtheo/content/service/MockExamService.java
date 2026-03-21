@@ -44,6 +44,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -124,12 +125,8 @@ public class MockExamService {
             LOG.warn("Not enough questions: have={}, need={}", allQuestions.size(), examConfig.totalQuestions());
         }
 
-        // Shuffle and select required number
-        List<StrapiQuestionDto> shuffled = new ArrayList<>(allQuestions);
-        Collections.shuffle(shuffled);
-        List<StrapiQuestionDto> examQuestions = shuffled.stream()
-                .limit(examConfig.totalQuestions())
-                .toList();
+        // Select questions using domain weights + difficulty distribution
+        List<StrapiQuestionDto> examQuestions = selectQuestions(allQuestions, examConfig);
 
         // Create exam attempt (placeholder — completed on submit)
         UUID examId = UUID.randomUUID();
@@ -142,7 +139,7 @@ public class MockExamService {
         for (int i = 0; i < examQuestions.size(); i++) {
             StrapiQuestionDto q = examQuestions.get(i);
             questionDtos.add(new QuestionDto(
-                    q.id(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
+                    q.documentId(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
                     q.answerOptions() != null ? q.answerOptions().stream()
                             .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
                             .toList() : null,
@@ -349,6 +346,87 @@ public class MockExamService {
         } catch (JsonProcessingException e) {
             LOG.error("Failed to serialize ExamCompletedEvent for user={}", userId, e);
         }
+    }
+
+    /**
+     * Selects exam questions using domain weights and difficulty distribution from ExamConfig.
+     * Falls back to simple shuffle-and-limit if no domainWeights are configured.
+     */
+    private List<StrapiQuestionDto> selectQuestions(List<StrapiQuestionDto> allQuestions,
+                                                     StrapiExamConfigDto examConfig) {
+        List<StrapiExamConfigDto.DomainWeightDto> weights = examConfig.domainWeights();
+        Map<String, Double> difficultyDist = examConfig.difficultyDistribution();
+        int totalTarget = examConfig.totalQuestions();
+
+        // Phase 1: domain-weighted selection
+        List<StrapiQuestionDto> domainSelected;
+        if (weights != null && !weights.isEmpty()) {
+            Map<String, List<StrapiQuestionDto>> byDomain = allQuestions.stream()
+                    .collect(Collectors.groupingBy(q -> q.domainCode() != null ? q.domainCode() : ""));
+            List<StrapiQuestionDto> selected = new ArrayList<>();
+            for (StrapiExamConfigDto.DomainWeightDto w : weights) {
+                List<StrapiQuestionDto> pool = new ArrayList<>(
+                        byDomain.getOrDefault(w.domainCode(), List.of()));
+                Collections.shuffle(pool);
+                int take = pool.size() >= w.targetQuestions() ? w.targetQuestions()
+                        : Math.min(pool.size(), w.minQuestions());
+                selected.addAll(pool.subList(0, take));
+            }
+            // If we ended up with fewer than target (small pools), top up from remaining questions
+            if (selected.size() < totalTarget) {
+                Set<String> selectedIds = selected.stream()
+                        .map(StrapiQuestionDto::documentId).collect(Collectors.toSet());
+                List<StrapiQuestionDto> remainder = allQuestions.stream()
+                        .filter(q -> !selectedIds.contains(q.documentId()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+                Collections.shuffle(remainder);
+                int need = totalTarget - selected.size();
+                selected.addAll(remainder.subList(0, Math.min(need, remainder.size())));
+            }
+            domainSelected = selected;
+        } else {
+            // No domain weights: simple shuffle
+            List<StrapiQuestionDto> shuffled = new ArrayList<>(allQuestions);
+            Collections.shuffle(shuffled);
+            domainSelected = shuffled.stream().limit(totalTarget).collect(Collectors.toList());
+        }
+
+        // Phase 2: difficulty distribution within selected pool
+        if (difficultyDist != null && !difficultyDist.isEmpty()) {
+            Map<String, List<StrapiQuestionDto>> byDifficulty = domainSelected.stream()
+                    .collect(Collectors.groupingBy(q -> q.difficulty() != null ? q.difficulty() : "medium"));
+            List<StrapiQuestionDto> distributed = new ArrayList<>();
+            for (Map.Entry<String, Double> entry : difficultyDist.entrySet()) {
+                String difficulty = entry.getKey();
+                int target = (int) Math.round(entry.getValue() * totalTarget);
+                List<StrapiQuestionDto> pool = new ArrayList<>(
+                        byDifficulty.getOrDefault(difficulty, List.of()));
+                Collections.shuffle(pool);
+                distributed.addAll(pool.subList(0, Math.min(target, pool.size())));
+            }
+            // Fill any gap from remaining questions if difficulty buckets ran short
+            if (distributed.size() < totalTarget) {
+                Set<String> usedIds = distributed.stream()
+                        .map(StrapiQuestionDto::documentId).collect(Collectors.toSet());
+                List<StrapiQuestionDto> remaining = domainSelected.stream()
+                        .filter(q -> !usedIds.contains(q.documentId()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+                Collections.shuffle(remaining);
+                int need = totalTarget - distributed.size();
+                distributed.addAll(remaining.subList(0, Math.min(need, remaining.size())));
+            }
+            // Truncate if over target (rounding may produce excess)
+            List<StrapiQuestionDto> result = distributed.size() > totalTarget
+                    ? distributed.subList(0, totalTarget) : distributed;
+            Collections.shuffle(result);
+            return List.copyOf(result);
+        }
+
+        // No difficulty distribution: just shuffle domain selection and limit
+        Collections.shuffle(domainSelected);
+        return domainSelected.size() > totalTarget
+                ? List.copyOf(domainSelected.subList(0, totalTarget))
+                : List.copyOf(domainSelected);
     }
 
     private String serializeJson(Object obj) {

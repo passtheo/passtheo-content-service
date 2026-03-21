@@ -84,7 +84,8 @@ Feature: Content Hierarchy Browsing
     And headers paidHeaders
     When method GET
     Then status 200
-    And match each response.data contains { title: '#string', content: '#string' }
+    And match each response.data contains { title: '#string', sections: '#array' }
+    And match each response.data[*].sections[*] contains { sortOrder: '#number' }
 
   Scenario: Content supports locale parameter
     Given path '/api/content/NL/cbr/auto-b/domains'

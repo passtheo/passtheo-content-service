@@ -86,7 +86,7 @@ public class AchievementService {
     @Transactional
     public List<EarnedAchievementDto> checkAchievements(@Nonnull UUID userId, @Nonnull String productCode) {
         Set<String> alreadyEarned = achievementRepository.findEarnedCodes(userId);
-        List<StrapiAchievementDefDto> defs = strapiContentCache.getAchievements();
+        List<StrapiAchievementDefDto> defs = strapiContentCache.getAchievements(productCode);
         List<EarnedAchievementDto> newlyEarned = new ArrayList<>();
 
         for (StrapiAchievementDefDto def : defs) {

@@ -184,9 +184,10 @@ class QuestionSelectionServiceTest {
         return java.util.stream.IntStream.rangeClosed(1, count)
                 .mapToObj(i -> new StrapiQuestionDto(
                         "q-" + domainCode + "-" + i,
+                        "doc-" + domainCode + "-" + i,
                         "Question " + i,
                         "multiple_choice", "medium",
-                        null, null, null, null, 1,
+                        null, null, null, null, null, 1,
                         List.of(), null, null, null, domainCode, "topic"))
                 .toList();
     }

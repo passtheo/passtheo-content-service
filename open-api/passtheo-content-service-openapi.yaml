@@ -1326,7 +1326,17 @@ components:
       properties:
         title: { type: string }
         slug: { type: string }
-        content: { type: string }
+        sections:
+          type: array
+          items:
+            type: object
+            properties:
+              heading: { type: string, nullable: true }
+              body: { type: string, nullable: true }
+              tip: { type: string, nullable: true }
+              keyRule: { type: string, nullable: true }
+              relatedRoadSignCode: { type: string, nullable: true }
+              sortOrder: { type: integer }
         summary: { type: string }
         coverImage: { type: string }
         videoUrl: { type: string }
@@ -1590,6 +1600,7 @@ components:
         triggerValue: { type: integer }
         currentProgress: { type: integer, description: "user's current value toward this trigger" }
         progressPercent: { type: number }
+        productCode: { type: string, nullable: true, description: "null = platform-wide achievement" }
 
     EarnedAchievementDto:
       type: object

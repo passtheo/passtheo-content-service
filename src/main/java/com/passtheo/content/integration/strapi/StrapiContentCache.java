@@ -64,7 +64,7 @@ public class StrapiContentCache {
      */
     public List<StrapiCountryDto> getCountries(@Nonnull String locale) {
         return getCachedOrFetch("countries:" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getCountries(locale));
     }
 
@@ -77,7 +77,7 @@ public class StrapiContentCache {
      */
     public List<StrapiProductTypeDto> getProductTypes(@Nonnull String countryCode, @Nonnull String locale) {
         return getCachedOrFetch("productTypes:" + countryCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getProductTypes(countryCode, locale));
     }
 
@@ -90,7 +90,7 @@ public class StrapiContentCache {
      */
     public List<StrapiProductDto> getProducts(@Nonnull String productTypeCode, @Nonnull String locale) {
         return getCachedOrFetch("products:" + productTypeCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getProducts(productTypeCode, locale));
     }
 
@@ -103,7 +103,7 @@ public class StrapiContentCache {
      */
     public List<StrapiDomainDto> getDomains(@Nonnull String productCode, @Nonnull String locale) {
         return getCachedOrFetch("domains:" + productCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getDomains(productCode, locale));
     }
 
@@ -116,7 +116,7 @@ public class StrapiContentCache {
      */
     public List<StrapiTopicDto> getTopics(@Nonnull String domainCode, @Nonnull String locale) {
         return getCachedOrFetch("topics:" + domainCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getTopics(domainCode, locale));
     }
 
@@ -129,7 +129,7 @@ public class StrapiContentCache {
      */
     public List<StrapiQuestionDto> getQuestionsByDomain(@Nonnull String domainCode, @Nonnull String locale) {
         return getCachedOrFetch("questions:domain:" + domainCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getQuestionsByDomain(domainCode, locale));
     }
 
@@ -142,7 +142,7 @@ public class StrapiContentCache {
      */
     public List<StrapiQuestionDto> getQuestionsByProduct(@Nonnull String productCode, @Nonnull String locale) {
         return getCachedOrFetch("questions:product:" + productCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getQuestionsByProduct(productCode, locale));
     }
 
@@ -151,11 +151,11 @@ public class StrapiContentCache {
      *
      * @param productCode the product code
      * @param locale      the content locale
-     * @return list of question IDs
+     * @return list of question documentIds (locale-independent)
      */
     public List<String> getQuestionIds(@Nonnull String productCode, @Nonnull String locale) {
         List<StrapiQuestionDto> questions = getQuestionsByProduct(productCode, locale);
-        return questions.stream().map(StrapiQuestionDto::id).toList();
+        return questions.stream().map(StrapiQuestionDto::documentId).toList();
     }
 
     /**
@@ -224,14 +224,16 @@ public class StrapiContentCache {
     }
 
     /**
-     * Gets achievement definitions with caching.
+     * Gets achievement definitions with caching, filtered by product (includes platform-wide).
      *
-     * @return list of achievement definitions
+     * @param productCode the product code
+     * @return list of achievement definitions for the product and platform-wide
      */
-    public List<StrapiAchievementDefDto> getAchievements() {
-        return getCachedOrFetch("achievements",
-                new TypeReference<>() {},
-                strapiClient::getAchievements);
+    public List<StrapiAchievementDefDto> getAchievements(@Nonnull String productCode) {
+        String cacheKey = "achievements:" + productCode;
+        return getCachedOrFetch(cacheKey,
+                new TypeReference<>() { },
+                () -> strapiClient.getAchievements(productCode));
     }
 
     /**
@@ -244,9 +246,10 @@ public class StrapiContentCache {
      */
     public List<StrapiRoadSignDto> getRoadSigns(@Nonnull String countryCode, @Nonnull String locale,
                                                  String category) {
-        String key = "roadSigns:" + countryCode + ":" + locale + (category != null ? ":" + category : "");
+        String key = "roadSigns:" + countryCode + ":" + locale
+                + (category != null ? ":" + category : "");
         return getCachedOrFetch(key,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getRoadSigns(countryCode, locale, category));
     }
 
@@ -258,8 +261,9 @@ public class StrapiContentCache {
      * @return list of lessons
      */
     public List<StrapiLessonDto> getLessons(@Nonnull String topicCode, @Nonnull String locale) {
-        return getCachedOrFetch("lessons:" + topicCode + ":" + locale,
-                new TypeReference<>() {},
+        String cacheKey = "lessons:" + topicCode + ":" + locale;
+        return getCachedOrFetch(cacheKey,
+                new TypeReference<>() { },
                 () -> strapiClient.getLessons(topicCode, locale));
     }
 
@@ -304,7 +308,8 @@ public class StrapiContentCache {
             }
             return result;
         } catch (Exception e) {
-            LOG.error("Strapi fetch FAILED: key={}, error={} — serving stale cache if available", cacheKey, e.getMessage(), e);
+            LOG.error("Strapi fetch FAILED: key={}, error={} — serving stale cache if available",
+                    cacheKey, e.getMessage(), e);
             if (cached != null) {
                 LOG.warn("Serving STALE cache: key={}", cacheKey);
                 try {

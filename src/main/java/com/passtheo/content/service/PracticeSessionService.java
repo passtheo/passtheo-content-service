@@ -448,7 +448,7 @@ public class PracticeSessionService {
             return null;
         }
         return new QuestionDto(
-                q.id(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
+                q.documentId(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
                 q.answerOptions() != null ? q.answerOptions().stream()
                         .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
                         .toList() : null,

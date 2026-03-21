@@ -190,7 +190,7 @@ class ReadinessServiceTest {
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(correct);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(bestExam);
         when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
-                .thenReturn(new StrapiExamConfigDto(50, 30, passScore, null, null, true, false, false));
+                .thenReturn(new StrapiExamConfigDto(50, 30, passScore, null, null, true, false, null, null, false));
         when(domainProgressRepository.findByKeycloakUserIdAndProductCode(eq(USER_ID), eq(PRODUCT_CODE)))
                 .thenReturn(List.of());
         when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());

@@ -5,6 +5,7 @@ import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.dto.response.CountryDto;
 import com.passtheo.content.dto.response.DomainWithProgressDto;
 import com.passtheo.content.dto.response.LessonDto;
+import com.passtheo.content.dto.response.LessonDto.LessonSectionDto;
 import com.passtheo.content.dto.response.ProductDto;
 import com.passtheo.content.dto.response.ProductTypeDto;
 import com.passtheo.content.dto.response.RoadSignDto;
@@ -227,7 +228,13 @@ public class ContentController {
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
         var lessons = strapiContentCache.getLessons(topicCode, locale).stream()
-                .map(l -> new LessonDto(l.title(), l.slug(), l.content(),
+                .map(l -> new LessonDto(
+                        l.title(), l.slug(),
+                        l.sections() != null ? l.sections().stream()
+                                .map(s -> new LessonSectionDto(
+                                        s.heading(), s.body(), s.tip(),
+                                        s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
+                                .toList() : List.of(),
                         l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes()))
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(lessons, MDC.get("traceId")));

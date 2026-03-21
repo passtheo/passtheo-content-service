@@ -10,6 +10,7 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiQuestionDto(
     String id,
+    String documentId,
     String questionText,
     String interactionType,
     String difficulty,
@@ -17,6 +18,7 @@ public record StrapiQuestionDto(
     String videoUrl,
     Integer correctNumber,
     Integer correctNumberTolerance,
+    Boolean correctBoolean,
     int version,
     List<AnswerOptionDto> answerOptions,
     ExplanationDto explanation,

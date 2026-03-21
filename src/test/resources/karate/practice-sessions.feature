@@ -174,3 +174,41 @@ Feature: Practice Sessions
     And match response.data.masteryChanges != null
     And match response.data.streakUpdate != null
     And assert response.data.streakUpdate.currentStreak >= 0
+
+  # ─── Language Switch Preserves Progress ───
+
+  Scenario: Language switch preserves progress using documentId
+    # Start session in Dutch and answer a question
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'verkeersborden', sessionType: 'PRACTICE', questionCount: 1, locale: 'nl' }
+    When method POST
+    Then status 200
+    * def questionIdNL = response.data.currentQuestion.strapiQuestionId
+    * def sessionId1 = response.data.sessionId
+    # Submit correct answer in Dutch
+    Given path '/api/practice/sessions/' + sessionId1 + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(questionIdNL)', answer: { selectedOptionId: 'opt-a' }, timeTakenMs: 3000 }
+    When method POST
+    Then status 200
+    And match response.data.isCorrect == '#boolean'
+    # Now start a new session in Turkish for the same domain
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'verkeersborden', sessionType: 'PRACTICE', questionCount: 1, locale: 'tr' }
+    When method POST
+    Then status 200
+    * def questionIdTR = response.data.currentQuestion.strapiQuestionId
+    # The strapiQuestionId should be the same (documentId is locale-independent)
+    # This verifies that the same question in different languages shares the same documentId
+    And match questionIdTR == questionIdNL
+    # Submit answer in Turkish - spaced repetition should recognize this as the same question
+    Given path '/api/practice/sessions/' + response.data.sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(questionIdTR)', answer: { selectedOptionId: 'opt-a' }, timeTakenMs: 3000 }
+    When method POST
+    Then status 200
+    # Mastery should have progressed from the previous answer (not starting fresh)
+    And match response.data.masteryUpdate != null
+    And match response.data.masteryUpdate.previousLevel != 'NEW'

@@ -27,6 +27,8 @@ Feature: Mock Exams
     And match each response.data.questions contains { strapiQuestionId: '#string', interactionType: '#string', domainCode: '#string' }
 
   Scenario: Exam questions span all 6 domains
+    # Question selection uses domain weights + difficulty distribution from ExamConfig if configured
+    # Falls back to simple shuffle-and-limit if no domainWeights are present
     Given path '/api/exams/mock/start'
     And headers paidHeaders
     And request { productCode: 'auto-b', locale: 'nl' }

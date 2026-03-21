@@ -159,6 +159,7 @@ Feature: Progress, Readiness, Streaks, Achievements, and Study Plan
     Then status 200
     And match response.data == '#[? _.length > 0]'
     And match each response.data contains { code: '#string', name: '#string', isEarned: '#boolean', triggerType: '#string', triggerValue: '#number' }
+    # Response includes both product-specific (productCode='auto-b') and platform-wide (productCode=null) achievements
     # Check that earned achievements have earnedAt
     * def earned = karate.filter(response.data, function(a){ return a.isEarned == true })
     * eval if (earned.length > 0) karate.match(earned[0], '{ earnedAt: "#string" }')
@@ -169,6 +170,7 @@ Feature: Progress, Readiness, Streaks, Achievements, and Study Plan
   Scenario: Fresh user has zero achievements earned
     Given path '/api/achievements/me'
     And headers freshHeaders
+    And param productCode = 'auto-b'
     When method GET
     Then status 200
     * def earned = karate.filter(response.data, function(a){ return a.isEarned == true })
