@@ -1,15 +1,17 @@
 package com.passtheo.content.unit;
 
+import com.passtheo.content.client.UserServiceClient;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
-import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
 import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.service.ReadinessService;
+import com.passtheo.shared.core.context.TenantContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,17 +38,26 @@ class ReadinessServiceTest {
     @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private ExamAttemptRepository examAttemptRepository;
     @Mock private StrapiContentCache strapiContentCache;
+    @Mock private UserServiceClient userServiceClient;
 
     private ReadinessService service;
 
     private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID TENANT_ID = UUID.randomUUID();
     private static final String PRODUCT_CODE = "auto-b";
     private static final String LOCALE = "nl";
 
     @BeforeEach
     void setUp() {
+        TenantContext.set(TENANT_ID);
+        org.mockito.Mockito.lenient().when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
         service = new ReadinessService(progressRepository, domainProgressRepository,
-                examAttemptRepository, strapiContentCache);
+                examAttemptRepository, strapiContentCache, userServiceClient);
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
     }
 
     @Test

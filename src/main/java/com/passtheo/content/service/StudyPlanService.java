@@ -11,6 +11,7 @@ import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.dto.request.GenerateStudyPlanRequest;
 import com.passtheo.content.dto.response.StudyPlanDayDto;
 import com.passtheo.content.dto.response.StudyPlanDto;
+import com.passtheo.content.client.UserServiceClient;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.StudyPlanDayRepository;
@@ -61,26 +62,30 @@ public class StudyPlanService {
     private final ReadinessService readinessService;
     private final StrapiContentCache strapiContentCache;
     private final ObjectMapper objectMapper;
+    private final UserServiceClient userServiceClient;
 
     /**
      * Constructs the study plan service.
      *
-     * @param planRepository    study plan repository
-     * @param planDayRepository study plan day repository
-     * @param readinessService  readiness score service
+     * @param planRepository     study plan repository
+     * @param planDayRepository  study plan day repository
+     * @param readinessService   readiness score service
      * @param strapiContentCache Strapi content cache
-     * @param objectMapper      JSON serializer
+     * @param objectMapper       JSON serializer
+     * @param userServiceClient  user-service client for exam date fallback
      */
     public StudyPlanService(StudyPlanRepository planRepository,
                             StudyPlanDayRepository planDayRepository,
                             ReadinessService readinessService,
                             StrapiContentCache strapiContentCache,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            UserServiceClient userServiceClient) {
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;
         this.readinessService = readinessService;
         this.strapiContentCache = strapiContentCache;
         this.objectMapper = objectMapper;
+        this.userServiceClient = userServiceClient;
     }
 
     /**
@@ -106,9 +111,20 @@ public class StudyPlanService {
         ReadinessScore readiness = readinessService.calculate(userId, request.productCode(), locale);
 
         LocalDate startDate = LocalDate.now(ZoneOffset.UTC);
+        LocalDate resolvedExamDate = request.examDate();
+        if (resolvedExamDate == null) {
+            UUID tenantId = TenantContext.get();
+            resolvedExamDate = userServiceClient.getProfile(userId, tenantId)
+                    .map(p -> p.examDate())
+                    .orElse(null);
+            if (resolvedExamDate != null) {
+                LOG.debug("Using exam date from user profile fallback: {}", resolvedExamDate);
+            }
+        }
+
         int totalDays;
-        if (request.examDate() != null) {
-            totalDays = (int) ChronoUnit.DAYS.between(startDate, request.examDate());
+        if (resolvedExamDate != null) {
+            totalDays = (int) ChronoUnit.DAYS.between(startDate, resolvedExamDate);
             totalDays = Math.max(MIN_PLAN_DAYS, Math.min(totalDays, MAX_PLAN_DAYS));
         } else {
             totalDays = DEFAULT_PLAN_DAYS;

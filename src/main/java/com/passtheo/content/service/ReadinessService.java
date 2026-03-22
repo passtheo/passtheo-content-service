@@ -1,5 +1,6 @@
 package com.passtheo.content.service;
 
+import com.passtheo.content.client.UserServiceClient;
 import com.passtheo.content.domain.entity.DomainProgress;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
@@ -10,12 +11,16 @@ import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
 import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
+import com.passtheo.shared.core.context.TenantContext;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,10 +49,14 @@ public class ReadinessService {
     private static final double STRONG_COVERAGE_THRESHOLD = 60.0;
     private static final double MASTERED_COVERAGE_THRESHOLD = 80.0;
 
+    private static final double READY_THRESHOLD = 80.0;
+    private static final double DAILY_PROGRESS_ESTIMATE = 0.5;
+
     private final QuestionProgressRepository progressRepository;
     private final DomainProgressRepository domainProgressRepository;
     private final ExamAttemptRepository examAttemptRepository;
     private final StrapiContentCache strapiContentCache;
+    private final UserServiceClient userServiceClient;
 
     /**
      * Constructs the readiness service.
@@ -56,15 +65,18 @@ public class ReadinessService {
      * @param domainProgressRepository domain progress repository
      * @param examAttemptRepository    exam attempt repository
      * @param strapiContentCache       Strapi content cache
+     * @param userServiceClient        user-service client for exam date
      */
     public ReadinessService(QuestionProgressRepository progressRepository,
                             DomainProgressRepository domainProgressRepository,
                             ExamAttemptRepository examAttemptRepository,
-                            StrapiContentCache strapiContentCache) {
+                            StrapiContentCache strapiContentCache,
+                            UserServiceClient userServiceClient) {
         this.progressRepository = progressRepository;
         this.domainProgressRepository = domainProgressRepository;
         this.examAttemptRepository = examAttemptRepository;
         this.strapiContentCache = strapiContentCache;
+        this.userServiceClient = userServiceClient;
     }
 
     /**
@@ -124,10 +136,25 @@ public class ReadinessService {
         LOG.debug("Readiness calculated: user={}, product={}, score={}, label={}, coverage={}, accuracy={}, exam={}",
                 userId, productCode, readiness, label, coverage, accuracy, exam);
 
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate examDate = userServiceClient.getProfile(userId, TenantContext.get())
+                .map(p -> p.examDate()).orElse(null);
+
+        Integer examCountdownDays = examDate != null
+                ? (int) ChronoUnit.DAYS.between(today, examDate) : null;
+
+        LocalDate predictedReadyDate = null;
+        if (readiness < READY_THRESHOLD && DAILY_PROGRESS_ESTIMATE > 0) {
+            double daysNeeded = (READY_THRESHOLD - readiness) / DAILY_PROGRESS_ESTIMATE;
+            predictedReadyDate = today.plusDays((long) Math.ceil(daysNeeded));
+        } else if (readiness >= READY_THRESHOLD) {
+            predictedReadyDate = today;
+        }
+
         return new ReadinessScore(
                 readiness, coverage, accuracy, exam, label,
                 attempted, totalQuestions, bestExamScore, passScore,
-                domainStrengths
+                domainStrengths, examCountdownDays, predictedReadyDate
         );
     }
 
