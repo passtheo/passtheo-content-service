@@ -139,18 +139,19 @@ public class MockExamService {
         for (int i = 0; i < examQuestions.size(); i++) {
             StrapiQuestionDto q = examQuestions.get(i);
             questionDtos.add(new QuestionDto(
-                    q.documentId(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
+                    q.documentId(), q.questionText(), q.interactionType(),
+                    q.image() != null ? q.image().url() : null, q.videoUrl(),
                     q.answerOptions() != null ? q.answerOptions().stream()
-                            .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
+                            .map(o -> new QuestionDto.AnswerOptionDto(String.valueOf(o.id()), o.text(), o.image()))
                             .toList() : null,
                     q.imageRegions() != null ? q.imageRegions().stream()
                             .map(r -> new QuestionDto.ImageRegionDto(
-                                    r.id(), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
+                                    String.valueOf(r.id()), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
                             .toList() : null,
                     q.dragTargets() != null ? q.dragTargets().stream()
-                            .map(t -> new QuestionDto.DragTargetDto(t.id(), t.label(), t.image()))
+                            .map(t -> new QuestionDto.DragTargetDto(String.valueOf(t.id()), t.label(), t.image()))
                             .toList() : null,
-                    i + 1, q.domainCode()
+                    i + 1, q.domain() != null ? q.domain().code() : null
             ));
         }
 
@@ -218,7 +219,7 @@ public class MockExamService {
                 correctCount++;
             }
 
-            String domainCode = question.domainCode() != null ? question.domainCode() : "unknown";
+            String domainCode = question.domain() != null ? question.domain().code() : "unknown";
             domainStats.computeIfAbsent(domainCode, k -> new int[]{0, 0});
             domainStats.get(domainCode)[1]++;
             if (isCorrect) {
@@ -362,7 +363,7 @@ public class MockExamService {
         List<StrapiQuestionDto> domainSelected;
         if (weights != null && !weights.isEmpty()) {
             Map<String, List<StrapiQuestionDto>> byDomain = allQuestions.stream()
-                    .collect(Collectors.groupingBy(q -> q.domainCode() != null ? q.domainCode() : ""));
+                    .collect(Collectors.groupingBy(q -> q.domain() != null ? q.domain().code() : ""));
             List<StrapiQuestionDto> selected = new ArrayList<>();
             for (StrapiExamConfigDto.DomainWeightDto w : weights) {
                 List<StrapiQuestionDto> pool = new ArrayList<>(

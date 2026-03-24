@@ -8,7 +8,9 @@ import com.passtheo.content.integration.strapi.dto.StrapiLessonDto;
 import com.passtheo.content.integration.strapi.dto.StrapiProductDto;
 import com.passtheo.content.integration.strapi.dto.StrapiProductTypeDto;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
+import com.passtheo.content.integration.strapi.dto.StrapiResponse;
 import com.passtheo.content.integration.strapi.dto.StrapiRoadSignDto;
+import com.passtheo.content.integration.strapi.dto.StrapiSingleResponse;
 import com.passtheo.content.integration.strapi.dto.StrapiTopicDto;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -19,7 +21,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * REST client for Strapi CMS. Read-only — never writes to Strapi.
@@ -29,7 +30,7 @@ import java.util.Map;
 public class StrapiClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(StrapiClient.class);
-    private static final String POPULATE_QUESTION = "populate=answerOptions,explanation,imageRegions,dragTargets,image,video,correctBoolean";
+    private static final String POPULATE_QUESTION = "populate=answerOptions,explanation,imageRegions,dragTargets,image,video,domain,topic,roadSigns";
 
     private final WebClient webClient;
 
@@ -50,8 +51,9 @@ public class StrapiClient {
      */
     public List<StrapiCountryDto> getCountries(@Nonnull String locale) {
         LOG.debug("Fetching countries from Strapi, locale={}", locale);
-        return fetchList("/api/countries?filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() { });
+        return fetchCollection("/api/countries?filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
+                new ParameterizedTypeReference<StrapiResponse<StrapiCountryDto>>() {
+                });
     }
 
     /**
@@ -63,9 +65,10 @@ public class StrapiClient {
      */
     public List<StrapiProductTypeDto> getProductTypes(@Nonnull String countryCode, @Nonnull String locale) {
         LOG.debug("Fetching product types from Strapi, country={}, locale={}", countryCode, locale);
-        return fetchList("/api/product-types?filters[country][code][$eq]=" + countryCode
+        return fetchCollection("/api/product-types?filters[country][code][$eq]=" + countryCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiProductTypeDto>>() {
+                });
     }
 
     /**
@@ -77,9 +80,10 @@ public class StrapiClient {
      */
     public List<StrapiProductDto> getProducts(@Nonnull String productTypeCode, @Nonnull String locale) {
         LOG.debug("Fetching products from Strapi, productType={}, locale={}", productTypeCode, locale);
-        return fetchList("/api/products?filters[productType][code][$eq]=" + productTypeCode
+        return fetchCollection("/api/products?filters[productType][code][$eq]=" + productTypeCode
                 + "&filters[isActive][$eq]=true&populate=examConfig&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiProductDto>>() {
+                });
     }
 
     /**
@@ -91,9 +95,10 @@ public class StrapiClient {
      */
     public List<StrapiDomainDto> getDomains(@Nonnull String productCode, @Nonnull String locale) {
         LOG.debug("Fetching domains from Strapi, product={}, locale={}", productCode, locale);
-        return fetchList("/api/domains?filters[product][code][$eq]=" + productCode
+        return fetchCollection("/api/domains?filters[product][code][$eq]=" + productCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiDomainDto>>() {
+                });
     }
 
     /**
@@ -105,9 +110,10 @@ public class StrapiClient {
      */
     public List<StrapiTopicDto> getTopics(@Nonnull String domainCode, @Nonnull String locale) {
         LOG.debug("Fetching topics from Strapi, domain={}, locale={}", domainCode, locale);
-        return fetchList("/api/topics?filters[domain][code][$eq]=" + domainCode
+        return fetchCollection("/api/topics?filters[domain][code][$eq]=" + domainCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiTopicDto>>() {
+                });
     }
 
     /**
@@ -119,10 +125,11 @@ public class StrapiClient {
      */
     public List<StrapiQuestionDto> getQuestionsByTopic(@Nonnull String topicCode, @Nonnull String locale) {
         LOG.debug("Fetching questions from Strapi, topic={}, locale={}", topicCode, locale);
-        return fetchList("/api/questions?filters[topic][code][$eq]=" + topicCode
+        return fetchCollection("/api/questions?filters[topic][code][$eq]=" + topicCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=100",
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
+                });
     }
 
     /**
@@ -134,10 +141,11 @@ public class StrapiClient {
      */
     public List<StrapiQuestionDto> getQuestionsByDomain(@Nonnull String domainCode, @Nonnull String locale) {
         LOG.debug("Fetching questions from Strapi, domain={}, locale={}", domainCode, locale);
-        return fetchList("/api/questions?filters[domain][code][$eq]=" + domainCode
+        return fetchCollection("/api/questions?filters[domain][code][$eq]=" + domainCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=200",
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
+                });
     }
 
     /**
@@ -149,10 +157,11 @@ public class StrapiClient {
      */
     public List<StrapiQuestionDto> getQuestionsByProduct(@Nonnull String productCode, @Nonnull String locale) {
         LOG.debug("Fetching all questions from Strapi, product={}, locale={}", productCode, locale);
-        return fetchList("/api/questions?filters[product][code][$eq]=" + productCode
+        return fetchCollection("/api/questions?filters[product][code][$eq]=" + productCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=500",
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
+                });
     }
 
     /**
@@ -165,12 +174,13 @@ public class StrapiClient {
     public StrapiQuestionDto getQuestion(@Nonnull String questionId, @Nonnull String locale) {
         LOG.debug("Fetching question from Strapi, id={}, locale={}", questionId, locale);
         try {
-            return webClient.get()
+            StrapiSingleResponse<StrapiQuestionDto> response = webClient.get()
                     .uri("/api/questions/" + questionId + "?" + POPULATE_QUESTION + "&locale=" + locale)
                     .retrieve()
-                    .bodyToMono(new ParameterizedTypeReference<Map<String, StrapiQuestionDto>>() { })
-                    .map(r -> r.get("data"))
+                    .bodyToMono(new ParameterizedTypeReference<StrapiSingleResponse<StrapiQuestionDto>>() {
+                    })
                     .block();
+            return response != null ? response.data() : null;
         } catch (Exception e) {
             LOG.error("Failed to fetch question {} from Strapi: {}", questionId, e.getMessage());
             return null;
@@ -185,10 +195,11 @@ public class StrapiClient {
      */
     public StrapiExamConfigDto getExamConfig(@Nonnull String productCode) {
         LOG.debug("Fetching exam config from Strapi, product={}", productCode);
-        List<StrapiExamConfigDto> configs = fetchList(
+        List<StrapiExamConfigDto> configs = fetchCollection(
                 "/api/exam-configs?filters[product][code][$eq]=" + productCode
                         + "&populate=domainWeights",
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiExamConfigDto>>() {
+                });
         return configs.isEmpty() ? null : configs.getFirst();
     }
 
@@ -200,11 +211,12 @@ public class StrapiClient {
      */
     public List<StrapiAchievementDefDto> getAchievements(@Nonnull String productCode) {
         LOG.debug("Fetching achievements from Strapi, productCode={}", productCode);
-        return fetchList(
+        return fetchCollection(
                 "/api/achievements?filters[$or][0][product][code][$eq]=" + productCode
                         + "&filters[$or][1][product][$null]=true"
                         + "&filters[isActive][$eq]=true&sort=sortOrder",
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiAchievementDefDto>>() {
+                });
     }
 
     /**
@@ -216,14 +228,15 @@ public class StrapiClient {
      * @return list of road signs
      */
     public List<StrapiRoadSignDto> getRoadSigns(@Nonnull String countryCode, @Nonnull String locale,
-                                                 String category) {
+            String category) {
         LOG.debug("Fetching road signs from Strapi, country={}, locale={}", countryCode, locale);
         String url = "/api/road-signs?filters[country][code][$eq]=" + countryCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale;
         if (category != null && !category.isBlank()) {
             url += "&filters[signCategory][$eq]=" + category;
         }
-        return fetchList(url, new ParameterizedTypeReference<>() { });
+        return fetchCollection(url, new ParameterizedTypeReference<StrapiResponse<StrapiRoadSignDto>>() {
+        });
     }
 
     /**
@@ -235,23 +248,36 @@ public class StrapiClient {
      */
     public List<StrapiLessonDto> getLessons(@Nonnull String topicCode, @Nonnull String locale) {
         LOG.debug("Fetching lessons from Strapi, topic={}, locale={}", topicCode, locale);
-        return fetchList("/api/lessons?filters[topic][code][$eq]=" + topicCode
+        return fetchCollection("/api/lessons?filters[topic][code][$eq]=" + topicCode
                 + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale
                 + "&populate[sections][populate]=*",
-                new ParameterizedTypeReference<>() { });
+                new ParameterizedTypeReference<StrapiResponse<StrapiLessonDto>>() {
+                });
     }
 
     /**
-     * Generic fetch list method for Strapi collections.
+     * Fetches a Strapi 5 collection endpoint, unwraps the {@code {"data":[...],"meta":{...}}} wrapper,
+     * and logs a warning when the total item count exceeds the page size.
      */
-    private <T> List<T> fetchList(String uri, ParameterizedTypeReference<List<T>> typeRef) {
+    private <T> List<T> fetchCollection(String uri, ParameterizedTypeReference<StrapiResponse<T>> typeRef) {
         try {
-            List<T> result = webClient.get()
+            StrapiResponse<T> response = webClient.get()
                     .uri(uri)
                     .retrieve()
                     .bodyToMono(typeRef)
                     .block();
-            return result != null ? result : List.of();
+            if (response == null) {
+                LOG.warn("Strapi returned null response for [{}]", uri);
+                return List.of();
+            }
+            if (response.meta() != null && response.meta().pagination() != null) {
+                StrapiResponse.StrapiPagination p = response.meta().pagination();
+                if (p.total() > p.pageSize()) {
+                    LOG.warn("Strapi pagination: pageSize={} < total={} — items truncated for [{}]",
+                            p.pageSize(), p.total(), uri);
+                }
+            }
+            return response.data() != null ? response.data() : List.of();
         } catch (Exception e) {
             LOG.error("Failed to fetch from Strapi [{}]: {}", uri, e.getMessage());
             return List.of();

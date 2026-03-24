@@ -52,6 +52,17 @@ public class SecurityConfig {
     }
 
     /**
+     * Creates the AuthenticationFilter bean.
+     *
+     * @return the authentication filter
+     */
+    @Bean
+    public com.passtheo.shared.security.filter.AuthenticationFilter authenticationFilter() {
+        LOG.info("Creating AuthenticationFilter bean");
+        return new com.passtheo.shared.security.filter.AuthenticationFilter();
+    }
+
+    /**
      * Configures the security filter chain.
      *
      * @param http the HttpSecurity builder
@@ -62,20 +73,12 @@ public class SecurityConfig {
     @Order(100)
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .addFilterBefore(tenantFilter(), UsernamePasswordAuthenticationFilter.class)
-            .addFilterAfter(tracingFilter(), TenantFilter.class)
-            .authorizeHttpRequests(auth -> {
-                auth.requestMatchers("/actuator/**").permitAll();
-                auth.requestMatchers("/internal/**").permitAll();
-                if (permitAll) {
-                    LOG.info("Security: permit-all mode enabled (acceptance tests)");
-                    auth.anyRequest().permitAll();
-                } else {
-                    auth.anyRequest().authenticated();
-                }
-            });
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(tenantFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(authenticationFilter(), TenantFilter.class)
+                .addFilterAfter(tracingFilter(), com.passtheo.shared.security.filter.AuthenticationFilter.class)
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
 }

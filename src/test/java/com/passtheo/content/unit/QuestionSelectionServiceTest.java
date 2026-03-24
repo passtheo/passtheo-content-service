@@ -4,6 +4,7 @@ import com.passtheo.content.domain.entity.QuestionProgress;
 import com.passtheo.content.domain.enums.MasteryLevel;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
+import com.passtheo.content.integration.strapi.dto.StrapiRelationDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.service.QuestionSelectionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -183,12 +184,15 @@ class QuestionSelectionServiceTest {
     private List<StrapiQuestionDto> buildQuestions(String domainCode, int count) {
         return java.util.stream.IntStream.rangeClosed(1, count)
                 .mapToObj(i -> new StrapiQuestionDto(
-                        "q-" + domainCode + "-" + i,
+                        i,
                         "doc-" + domainCode + "-" + i,
                         "Question " + i,
                         "multiple_choice", "medium",
-                        null, null, null, null, null, 1,
-                        List.of(), null, null, null, domainCode, "topic"))
+                        null, null, null, null, 1, false, false, null, null,
+                        List.of(), null, null, null, null, null,
+                        new StrapiRelationDto(0, null, domainCode, null),
+                        new StrapiRelationDto(0, null, "topic", null),
+                        null))
                 .toList();
     }
 }

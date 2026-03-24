@@ -200,8 +200,8 @@ public class PracticeSessionService {
                     QuestionProgress qp = new QuestionProgress(
                             userId, request.strapiQuestionId(),
                             session.getProductCode(),
-                            question.domainCode() != null ? question.domainCode() : "",
-                            question.topicCode() != null ? question.topicCode() : "");
+                            question.domain() != null ? question.domain().code() : "",
+                            question.topic() != null ? question.topic().code() : "");
                     qp.setTenantId(TenantContext.get());
                     return qp;
                 });
@@ -448,18 +448,19 @@ public class PracticeSessionService {
             return null;
         }
         return new QuestionDto(
-                q.documentId(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
+                q.documentId(), q.questionText(), q.interactionType(),
+                q.image() != null ? q.image().url() : null, q.videoUrl(),
                 q.answerOptions() != null ? q.answerOptions().stream()
-                        .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
+                        .map(o -> new QuestionDto.AnswerOptionDto(String.valueOf(o.id()), o.text(), o.image()))
                         .toList() : null,
                 q.imageRegions() != null ? q.imageRegions().stream()
                         .map(r -> new QuestionDto.ImageRegionDto(
-                                r.id(), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
+                                String.valueOf(r.id()), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
                         .toList() : null,
                 q.dragTargets() != null ? q.dragTargets().stream()
-                        .map(t -> new QuestionDto.DragTargetDto(t.id(), t.label(), t.image()))
+                        .map(t -> new QuestionDto.DragTargetDto(String.valueOf(t.id()), t.label(), t.image()))
                         .toList() : null,
-                order, q.domainCode()
+                order, q.domain() != null ? q.domain().code() : null
         );
     }
 

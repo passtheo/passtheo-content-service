@@ -9,6 +9,8 @@ import java.util.List;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiCountryDto(
+    int id,
+    String documentId,
     String name,
     String code,
     String flagImage,

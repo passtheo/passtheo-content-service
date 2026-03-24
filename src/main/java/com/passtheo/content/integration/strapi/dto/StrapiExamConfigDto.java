@@ -10,6 +10,8 @@ import java.util.Map;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiExamConfigDto(
+    int id,
+    String documentId,
     int totalQuestions,
     int timeLimitMinutes,
     int passScore,

@@ -230,8 +230,7 @@ public class StrapiContentCache {
      * @return list of achievement definitions for the product and platform-wide
      */
     public List<StrapiAchievementDefDto> getAchievements(@Nonnull String productCode) {
-        String cacheKey = "achievements:" + productCode;
-        return getCachedOrFetch(cacheKey,
+        return getCachedOrFetch("achievements:" + productCode,
                 new TypeReference<>() { },
                 () -> strapiClient.getAchievements(productCode));
     }
@@ -246,9 +245,8 @@ public class StrapiContentCache {
      */
     public List<StrapiRoadSignDto> getRoadSigns(@Nonnull String countryCode, @Nonnull String locale,
                                                  String category) {
-        String key = "roadSigns:" + countryCode + ":" + locale
-                + (category != null ? ":" + category : "");
-        return getCachedOrFetch(key,
+        return getCachedOrFetch("roadSigns:" + countryCode + ":" + locale
+                + (category != null ? ":" + category : ""),
                 new TypeReference<>() { },
                 () -> strapiClient.getRoadSigns(countryCode, locale, category));
     }
@@ -261,8 +259,7 @@ public class StrapiContentCache {
      * @return list of lessons
      */
     public List<StrapiLessonDto> getLessons(@Nonnull String topicCode, @Nonnull String locale) {
-        String cacheKey = "lessons:" + topicCode + ":" + locale;
-        return getCachedOrFetch(cacheKey,
+        return getCachedOrFetch("lessons:" + topicCode + ":" + locale,
                 new TypeReference<>() { },
                 () -> strapiClient.getLessons(topicCode, locale));
     }
@@ -300,8 +297,11 @@ public class StrapiContentCache {
 
         try {
             T result = fetcher.get();
-            if (result != null) {
-                cacheValue(cacheKey, result);
+            if (result instanceof List<?> list && list.isEmpty()) {
+                cacheValue(cacheKey, result, Duration.ofMinutes(5));
+                LOG.warn("Strapi returned empty list for key={} — caching with 5-min TTL", cacheKey);
+            } else if (result != null) {
+                cacheValue(cacheKey, result, cacheTtl);
                 LOG.debug("Cache POPULATED: key={}", cacheKey);
             } else {
                 LOG.warn("Strapi returned null for key={}", cacheKey);
@@ -323,12 +323,19 @@ public class StrapiContentCache {
     }
 
     /**
-     * Caches a value in Redis with TTL.
+     * Caches a value in Redis with the default TTL.
      */
     private void cacheValue(String key, Object value) {
+        cacheValue(key, value, cacheTtl);
+    }
+
+    /**
+     * Caches a value in Redis with an explicit TTL.
+     */
+    private void cacheValue(String key, Object value, Duration ttl) {
         try {
             String json = objectMapper.writeValueAsString(value);
-            redisTemplate.opsForValue().set(key, json, cacheTtl);
+            redisTemplate.opsForValue().set(key, json, ttl);
         } catch (JsonProcessingException e) {
             LOG.warn("Failed to serialize cache value for key {}: {}", key, e.getMessage());
         }

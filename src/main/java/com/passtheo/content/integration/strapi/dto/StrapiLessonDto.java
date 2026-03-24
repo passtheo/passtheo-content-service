@@ -9,6 +9,8 @@ import java.util.List;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiLessonDto(
+    int id,
+    String documentId,
     String title,
     String slug,
     List<SectionDto> sections,

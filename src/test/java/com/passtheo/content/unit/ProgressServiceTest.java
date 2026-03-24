@@ -70,7 +70,7 @@ class ProgressServiceTest {
                 .thenReturn(List.of(dp));
         when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE)))
                 .thenReturn(List.of(new StrapiDomainDto(
-                        "Verkeersborden", "verkeersborden", "verkeersborden",
+                        1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
                         "desc", null, "#E63946", 50, true, true, 1)));
 
         List<DomainProgressDto> result = progressService.getDomainProgress(USER_ID, PRODUCT, LOCALE);
