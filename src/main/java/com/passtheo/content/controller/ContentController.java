@@ -6,6 +6,7 @@ import com.passtheo.content.dto.response.CountryDto;
 import com.passtheo.content.dto.response.DomainWithProgressDto;
 import com.passtheo.content.dto.response.LessonDto;
 import com.passtheo.content.dto.response.LessonDto.LessonSectionDto;
+import com.passtheo.content.dto.response.OnboardingCatalogDto;
 import com.passtheo.content.dto.response.ProductDto;
 import com.passtheo.content.dto.response.ProductTypeDto;
 import com.passtheo.content.dto.response.RoadSignDto;
@@ -14,6 +15,7 @@ import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.service.EntitlementChecker;
+import com.passtheo.content.service.OnboardingCatalogService;
 import com.passtheo.shared.core.dto.ApiResponse;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -45,6 +47,7 @@ public class ContentController {
     private final StrapiContentCache strapiContentCache;
     private final DomainProgressRepository domainProgressRepository;
     private final EntitlementChecker entitlementChecker;
+    private final OnboardingCatalogService onboardingCatalogService;
 
     /**
      * Constructs the content controller.
@@ -52,13 +55,28 @@ public class ContentController {
      * @param strapiContentCache       Strapi content cache
      * @param domainProgressRepository domain progress repository
      * @param entitlementChecker       entitlement checker
+     * @param onboardingCatalogService onboarding catalog service
      */
     public ContentController(StrapiContentCache strapiContentCache,
                              DomainProgressRepository domainProgressRepository,
-                             EntitlementChecker entitlementChecker) {
+                             EntitlementChecker entitlementChecker,
+                             OnboardingCatalogService onboardingCatalogService) {
         this.strapiContentCache = strapiContentCache;
         this.domainProgressRepository = domainProgressRepository;
         this.entitlementChecker = entitlementChecker;
+        this.onboardingCatalogService = onboardingCatalogService;
+    }
+
+    /**
+     * Returns the full onboarding catalog in one call.
+     * Public — no auth required (user has not registered yet).
+     *
+     * @return onboarding catalog with countries, product types, products, and app config
+     */
+    @GetMapping("/onboarding-catalog")
+    public ResponseEntity<ApiResponse<OnboardingCatalogDto>> getOnboardingCatalog() {
+        OnboardingCatalogDto catalog = onboardingCatalogService.getOnboardingCatalog();
+        return ResponseEntity.ok(ApiResponse.success(catalog, MDC.get("traceId")));
     }
 
     /**
@@ -157,9 +175,13 @@ public class ContentController {
                     dp.getStrength() != null ? dp.getStrength().name() : "UNKNOWN")
                     : new DomainWithProgressDto.ProgressOverlay(0.0, 0.0, 0, "UNKNOWN");
 
+            int questionCount = d.questionCount() != null
+                    ? d.questionCount()
+                    : strapiContentCache.getQuestionsByDomain(d.code(), locale).size();
+
             return new DomainWithProgressDto(
                     d.code(), d.name(), d.icon(), d.color(),
-                    0, d.questionCount() != null ? d.questionCount() : 0,
+                    0, questionCount,
                     d.isFreePreview(), isLocked, progress);
         }).toList();
 
@@ -186,7 +208,9 @@ public class ContentController {
         var topics = strapiContentCache.getTopics(domainCode, locale).stream()
                 .map(t -> new TopicWithProgressDto(
                         t.code(), t.name(), t.difficulty(),
-                        t.questionCount() != null ? t.questionCount() : 0, null))
+                        t.questionCount() != null ? t.questionCount()
+                                : strapiContentCache.getQuestionsByTopic(t.code(), locale).size(),
+                        null))
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(topics, MDC.get("traceId")));
     }

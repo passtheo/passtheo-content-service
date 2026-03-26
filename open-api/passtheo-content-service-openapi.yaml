@@ -33,6 +33,64 @@ tags:
 
 paths:
   # ─── CONTENT HIERARCHY ───
+  /api/content/onboarding-catalog:
+    get:
+      operationId: getOnboardingCatalog
+      tags: [Content]
+      summary: Get full content catalog for onboarding
+      description: |
+        Returns the complete nested tree of countries, product types,
+        and products in one response. Used by Flutter during onboarding
+        to avoid 3 sequential API calls. Also includes app config
+        for maintenance mode and version checks.
+        
+        Public endpoint — no authentication required.
+        Cached in Redis under key "strapi:onboarding-catalog" for 1 hour.
+      security: []
+      responses:
+        '200':
+          description: Full onboarding catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_OnboardingCatalog'
+              example:
+                success: true
+                data:
+                  countries:
+                    - code: "NL"
+                      name: "Nederland"
+                      flagImage: "https://cdn.passtheo.nl/flags/nl.svg"
+                      supportedLocales: ["nl", "en", "ar", "tr", "pl"]
+                      productTypes:
+                        - code: "cbr"
+                          name: "CBR Rijexamen"
+                          description: "Theorie-examen voor het rijbewijs"
+                          icon: "https://cdn.passtheo.nl/icons/cbr.svg"
+                          regulatoryBody: "Centraal Bureau Rijvaardigheidsbewijzen"
+                          products:
+                            - code: "auto-b"
+                              name: "Auto Theorie (B)"
+                              licenceCode: "B"
+                              description: "Theorie-examen personenauto rijbewijs B"
+                              icon: "https://cdn.passtheo.nl/icons/auto-b.svg"
+                              isPremium: false
+                              examConfig:
+                                totalQuestions: 50
+                                timeLimitMinutes: 30
+                                passScore: 44
+                              domainCount: 6
+                              totalQuestions: 487
+                  appConfig:
+                    maintenanceMode: false
+                    minimumAppVersion: "1.0.0"
+                    freeDailyQuestionLimit: 10
+                    freeWeeklyExamLimit: 1
+                    freeDomainLimit: 2
+                    supportEmail: "support@passtheo.nl"
+                  supportedLocales: ["nl", "en", "ar", "tr", "pl"]
+                timestamp: "2026-03-25T10:00:00Z"
+
   /api/content/countries:
     get:
       operationId: listCountries
@@ -1240,6 +1298,75 @@ components:
         success: { type: boolean }
         data: { $ref: '#/components/schemas/StudyPlanDayDto' }
         timestamp: { type: string, format: date-time }
+
+    ApiResponse_OnboardingCatalog:
+      type: object
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/OnboardingCatalogDto' }
+        timestamp: { type: string, format: date-time }
+
+    OnboardingCatalogDto:
+      type: object
+      properties:
+        countries:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogCountryDto' }
+        appConfig: { $ref: '#/components/schemas/CatalogAppConfigDto' }
+        supportedLocales: { type: array, items: { type: string } }
+
+    CatalogCountryDto:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        flagImage: { type: string }
+        supportedLocales: { type: array, items: { type: string } }
+        productTypes:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogProductTypeDto' }
+
+    CatalogProductTypeDto:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        icon: { type: string }
+        regulatoryBody: { type: string }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogProductDto' }
+
+    CatalogProductDto:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        licenceCode: { type: string }
+        description: { type: string }
+        icon: { type: string }
+        isPremium: { type: boolean }
+        examConfig: { $ref: '#/components/schemas/CatalogExamConfigDto' }
+        domainCount: { type: integer }
+        totalQuestions: { type: integer }
+
+    CatalogExamConfigDto:
+      type: object
+      properties:
+        totalQuestions: { type: integer }
+        timeLimitMinutes: { type: integer }
+        passScore: { type: integer }
+
+    CatalogAppConfigDto:
+      type: object
+      properties:
+        maintenanceMode: { type: boolean }
+        minimumAppVersion: { type: string }
+        freeDailyQuestionLimit: { type: integer }
+        freeWeeklyExamLimit: { type: integer }
+        freeDomainLimit: { type: integer }
+        supportEmail: { type: string }
 
     # ─── Entity DTOs ───
     CountryDto:

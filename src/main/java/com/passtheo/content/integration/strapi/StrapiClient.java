@@ -1,6 +1,7 @@
 package com.passtheo.content.integration.strapi;
 
 import com.passtheo.content.integration.strapi.dto.StrapiAchievementDefDto;
+import com.passtheo.content.integration.strapi.dto.StrapiAppConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiCountryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
@@ -81,7 +82,7 @@ public class StrapiClient {
     public List<StrapiProductDto> getProducts(@Nonnull String productTypeCode, @Nonnull String locale) {
         LOG.debug("Fetching products from Strapi, productType={}, locale={}", productTypeCode, locale);
         return fetchCollection("/api/products?filters[productType][code][$eq]=" + productTypeCode
-                + "&filters[isActive][$eq]=true&populate=examConfig&sort=sortOrder&locale=" + locale,
+                + "&filters[isActive][$eq]=true&sort=sortOrder&locale=" + locale,
                 new ParameterizedTypeReference<StrapiResponse<StrapiProductDto>>() {
                 });
     }
@@ -141,7 +142,7 @@ public class StrapiClient {
      */
     public List<StrapiQuestionDto> getQuestionsByDomain(@Nonnull String domainCode, @Nonnull String locale) {
         LOG.debug("Fetching questions from Strapi, domain={}, locale={}", domainCode, locale);
-        return fetchCollection("/api/questions?filters[domain][code][$eq]=" + domainCode
+        return fetchCollection("/api/questions?filters[topic][domain][code][$eq]=" + domainCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=200",
                 new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
@@ -157,7 +158,7 @@ public class StrapiClient {
      */
     public List<StrapiQuestionDto> getQuestionsByProduct(@Nonnull String productCode, @Nonnull String locale) {
         LOG.debug("Fetching all questions from Strapi, product={}, locale={}", productCode, locale);
-        return fetchCollection("/api/questions?filters[product][code][$eq]=" + productCode
+        return fetchCollection("/api/questions?filters[topic][domain][product][code][$eq]=" + productCode
                 + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=500",
                 new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
@@ -253,6 +254,27 @@ public class StrapiClient {
                 + "&populate[sections][populate]=*",
                 new ParameterizedTypeReference<StrapiResponse<StrapiLessonDto>>() {
                 });
+    }
+
+    /**
+     * Fetches the app config single-type from Strapi.
+     *
+     * @return the app config, or null if unavailable
+     */
+    public StrapiAppConfigDto getAppConfig() {
+        LOG.debug("Fetching app config from Strapi");
+        try {
+            StrapiSingleResponse<StrapiAppConfigDto> response = webClient.get()
+                    .uri("/api/app-config")
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<StrapiSingleResponse<StrapiAppConfigDto>>() {
+                    })
+                    .block();
+            return response != null ? response.data() : null;
+        } catch (Exception e) {
+            LOG.error("Failed to fetch app config from Strapi: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

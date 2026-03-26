@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.integration.strapi.dto.StrapiAchievementDefDto;
+import com.passtheo.content.integration.strapi.dto.StrapiAppConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiCountryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
@@ -121,6 +122,19 @@ public class StrapiContentCache {
     }
 
     /**
+     * Gets questions for a topic with caching.
+     *
+     * @param topicCode the topic code
+     * @param locale    the content locale
+     * @return list of questions
+     */
+    public List<StrapiQuestionDto> getQuestionsByTopic(@Nonnull String topicCode, @Nonnull String locale) {
+        return getCachedOrFetch("questions:topic:" + topicCode + ":" + locale,
+                new TypeReference<>() { },
+                () -> strapiClient.getQuestionsByTopic(topicCode, locale));
+    }
+
+    /**
      * Gets questions for a domain with caching.
      *
      * @param domainCode the domain code
@@ -197,6 +211,34 @@ public class StrapiContentCache {
             LOG.warn("Strapi returned null question for id={}, locale={}", questionId, locale);
         }
         return question;
+    }
+
+    /**
+     * Gets the app config with caching.
+     *
+     * @return the app config, or null if unavailable
+     */
+    public StrapiAppConfigDto getAppConfig() {
+        String cacheKey = CACHE_PREFIX + "appConfig";
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            LOG.debug("Cache HIT: key={}", cacheKey);
+            try {
+                return objectMapper.readValue(cached, StrapiAppConfigDto.class);
+            } catch (JsonProcessingException e) {
+                LOG.warn("Cache HIT but deserialize failed: key={}, error={}", cacheKey, e.getMessage());
+            }
+        }
+
+        LOG.debug("Cache MISS: key={}", cacheKey);
+        StrapiAppConfigDto config = strapiClient.getAppConfig();
+        if (config != null) {
+            cacheValue(cacheKey, config, cacheTtl);
+            LOG.debug("Cache POPULATED: key={}", cacheKey);
+        } else {
+            LOG.warn("Strapi returned null app config");
+        }
+        return config;
     }
 
     /**

@@ -108,3 +108,37 @@ Feature: Content Hierarchy Browsing
     When method GET
     Then status 200
     And match response.data == '#[0]'
+
+  # ─── Onboarding Catalog ───
+
+  Scenario: Onboarding catalog returns full nested tree
+    Given path '/api/content/onboarding-catalog'
+    When method GET
+    Then status 200
+    And match response.success == true
+    And match response.data.countries == '#[? _.length > 0]'
+    And match response.data.countries[0].code == 'NL'
+    And match response.data.countries[0].productTypes == '#[? _.length > 0]'
+    And match response.data.countries[0].productTypes[0].code == 'cbr'
+    And match response.data.countries[0].productTypes[0].products == '#[? _.length > 0]'
+    And match response.data.countries[0].productTypes[0].products[0].code == 'auto-b'
+    And match response.data.countries[0].productTypes[0].products[0].examConfig.totalQuestions == 50
+    And match response.data.countries[0].productTypes[0].products[0].examConfig.passScore == 44
+    And match response.data.appConfig.maintenanceMode == false
+    And match response.data.appConfig.minimumAppVersion == '#string'
+    And match response.data.supportedLocales contains 'nl'
+    And match response.data.supportedLocales contains 'en'
+
+  Scenario: Onboarding catalog is accessible without auth
+    Given path '/api/content/onboarding-catalog'
+    When method GET
+    Then status 200
+
+  Scenario: Onboarding catalog includes exam config for each product
+    Given path '/api/content/onboarding-catalog'
+    When method GET
+    Then status 200
+    * def product = response.data.countries[0].productTypes[0].products[0]
+    And match product.examConfig == { totalQuestions: 50, timeLimitMinutes: 30, passScore: 44 }
+    And match product.domainCount == 6
+    And match product.totalQuestions == '#number'
