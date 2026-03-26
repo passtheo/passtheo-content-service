@@ -340,8 +340,7 @@ public class StrapiContentCache {
         try {
             T result = fetcher.get();
             if (result instanceof List<?> list && list.isEmpty()) {
-                cacheValue(cacheKey, result, Duration.ofMinutes(5));
-                LOG.warn("Strapi returned empty list for key={} — caching with 5-min TTL", cacheKey);
+                LOG.warn("Strapi returned empty list for key={} — skipping cache", cacheKey);
             } else if (result != null) {
                 cacheValue(cacheKey, result, cacheTtl);
                 LOG.debug("Cache POPULATED: key={}", cacheKey);

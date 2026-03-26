@@ -31,7 +31,7 @@ import java.util.List;
 public class StrapiClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(StrapiClient.class);
-    private static final String POPULATE_QUESTION = "populate=answerOptions,explanation,imageRegions,dragTargets,image,video,domain,topic,roadSigns";
+    private static final String POPULATE_QUESTION = "populate[0]=answerOptions&populate[1]=explanation&populate[2]=imageRegions&populate[3]=dragTargets&populate[4]=image&populate[5]=video&populate[6]=domain&populate[7]=topic&populate[8]=roadSigns";
 
     private final WebClient webClient;
 
