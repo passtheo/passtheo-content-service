@@ -1,8 +1,5 @@
 package com.passtheo.content.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.dto.response.OnboardingCatalogDto;
 import com.passtheo.content.dto.response.OnboardingCatalogDto.CatalogAppConfigDto;
 import com.passtheo.content.dto.response.OnboardingCatalogDto.CatalogCountryDto;
@@ -18,73 +15,43 @@ import com.passtheo.content.integration.strapi.dto.StrapiProductDto;
 import com.passtheo.content.integration.strapi.dto.StrapiProductTypeDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.util.List;
 
 /**
  * Assembles the full onboarding catalog (countries → product types → products + app config)
- * from the per-entity Strapi cache and stores the assembled result under its own Redis key.
+ * from the per-entity Strapi cache. No assembled-level caching — each entity is cached
+ * individually by StrapiContentCache, and the onboarding endpoint is called rarely
+ * (once per app install) so assembly overhead is negligible.
  */
 @Service
 public class OnboardingCatalogService {
 
     private static final Logger LOG = LoggerFactory.getLogger(OnboardingCatalogService.class);
-    static final String CACHE_KEY = "strapi:onboarding-catalog";
     private static final String DEFAULT_LOCALE = "nl";
 
     private final StrapiContentCache strapiContentCache;
-    private final RedisTemplate<String, String> redisTemplate;
-    private final ObjectMapper objectMapper;
-    private final Duration cacheTtl;
 
     /**
      * Constructs the onboarding catalog service.
      *
-     * @param strapiContentCache Strapi content cache
-     * @param redisTemplate      Redis template
-     * @param objectMapper       JSON object mapper
-     * @param ttlSeconds         assembled-catalog cache TTL in seconds
+     * @param strapiContentCache Strapi per-entity cache
      */
-    public OnboardingCatalogService(StrapiContentCache strapiContentCache,
-                                    RedisTemplate<String, String> redisTemplate,
-                                    ObjectMapper objectMapper,
-                                    @Value("${passtheo.content-cache.ttl-seconds:3600}") long ttlSeconds) {
+    public OnboardingCatalogService(StrapiContentCache strapiContentCache) {
         this.strapiContentCache = strapiContentCache;
-        this.redisTemplate = redisTemplate;
-        this.objectMapper = objectMapper;
-        this.cacheTtl = Duration.ofSeconds(ttlSeconds);
     }
 
     /**
-     * Returns the assembled onboarding catalog, reading from the assembled cache first.
-     * On a cache miss, builds from individual per-entity caches and stores the result.
+     * Returns the assembled onboarding catalog directly from per-entity caches.
      *
      * @return the full onboarding catalog
      */
     public OnboardingCatalogDto getOnboardingCatalog() {
-        String cached = redisTemplate.opsForValue().get(CACHE_KEY);
-        if (cached != null) {
-            LOG.debug("Cache HIT: key={}", CACHE_KEY);
-            try {
-                return objectMapper.readValue(cached, new TypeReference<>() { });
-            } catch (JsonProcessingException e) {
-                LOG.warn("Cache HIT but deserialize failed for {}: {}", CACHE_KEY, e.getMessage());
-            }
-        }
-
-        LOG.debug("Cache MISS: key={} — assembling from per-entity cache", CACHE_KEY);
-        OnboardingCatalogDto catalog = assembleCatalog();
-        storeCatalog(catalog);
-        return catalog;
+        LOG.debug("Assembling onboarding catalog from per-entity cache");
+        return assembleCatalog();
     }
 
-    /**
-     * Builds the nested catalog tree from the per-entity Strapi caches.
-     */
     private OnboardingCatalogDto assembleCatalog() {
         List<StrapiCountryDto> countries = strapiContentCache.getCountries(DEFAULT_LOCALE);
 
@@ -174,15 +141,5 @@ public class OnboardingCatalogService {
                 config.freeWeeklyExamLimit(),
                 config.freeDomainLimit(),
                 config.supportEmail());
-    }
-
-    private void storeCatalog(OnboardingCatalogDto catalog) {
-        try {
-            String json = objectMapper.writeValueAsString(catalog);
-            redisTemplate.opsForValue().set(CACHE_KEY, json, cacheTtl);
-            LOG.debug("Cache POPULATED: key={}", CACHE_KEY);
-        } catch (JsonProcessingException e) {
-            LOG.warn("Failed to serialize onboarding catalog for caching: {}", e.getMessage());
-        }
     }
 }
