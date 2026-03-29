@@ -1,18 +1,32 @@
 package com.passtheo.content.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.passtheo.content.domain.entity.OutboxEvent;
 import com.passtheo.content.domain.entity.Streak;
+import com.passtheo.content.domain.enums.OutboxStatus;
 import com.passtheo.content.domain.valueobject.StreakResult;
+import com.passtheo.content.repository.OutboxEventRepository;
+import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.shared.core.context.TenantContext;
+import com.passtheo.shared.events.config.KafkaTopic;
+import com.passtheo.shared.events.content.StreakUpdatedEvent;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages daily study streaks and freeze slots.
@@ -31,19 +45,30 @@ public class StreakService {
     private static final int FREEZE_AWARD_14 = 2;
     private static final int FREEZE_AWARD_30 = 3;
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private final StreakRepository streakRepository;
+    private final SessionAnswerRepository sessionAnswerRepository;
+    private final OutboxEventRepository outboxEventRepository;
 
     /**
      * Constructs the streak service.
      *
-     * @param streakRepository the streak repository
+     * @param streakRepository        the streak repository
+     * @param sessionAnswerRepository the session answer repository
+     * @param outboxEventRepository   the outbox event repository
      */
-    public StreakService(StreakRepository streakRepository) {
+    public StreakService(StreakRepository streakRepository,
+                        SessionAnswerRepository sessionAnswerRepository,
+                        OutboxEventRepository outboxEventRepository) {
         this.streakRepository = streakRepository;
+        this.sessionAnswerRepository = sessionAnswerRepository;
+        this.outboxEventRepository = outboxEventRepository;
     }
 
     /**
      * Updates the streak after an answer submission.
+     * Retries once on optimistic locking failure (multi-pod safety).
      *
      * @param userId      the user's Keycloak ID
      * @param productCode the product code
@@ -51,6 +76,15 @@ public class StreakService {
      */
     @Transactional
     public StreakResult updateStreak(@Nonnull UUID userId, @Nonnull String productCode) {
+        try {
+            return doUpdateStreak(userId, productCode);
+        } catch (ObjectOptimisticLockingFailureException ex) {
+            LOG.warn("Optimistic locking conflict on streak update for user={}, retrying once", userId);
+            return doUpdateStreak(userId, productCode);
+        }
+    }
+
+    private StreakResult doUpdateStreak(UUID userId, String productCode) {
         Streak streak = streakRepository.findByKeycloakUserIdAndProductCode(userId, productCode)
                 .orElseGet(() -> createNewStreak(userId, productCode));
 
@@ -97,6 +131,13 @@ public class StreakService {
         LOG.debug("Streak updated: user={}, product={}, current={}, longest={}, isNewDay={}",
                 userId, productCode, streak.getCurrentStreak(), streak.getLongestStreak(), isNewDay);
 
+        boolean milestone = streak.getCurrentStreak() == 7
+                || streak.getCurrentStreak() == 14
+                || streak.getCurrentStreak() == 30
+                || streak.getCurrentStreak() == 60;
+        publishStreakEvent(streak.getTenantId(), userId, productCode,
+                streak.getCurrentStreak(), streak.getLongestStreak(), milestone, streakAtRisk);
+
         return new StreakResult(
                 streak.getCurrentStreak(),
                 streak.getLongestStreak(),
@@ -137,6 +178,52 @@ public class StreakService {
                 streakAtRisk,
                 false
         );
+    }
+
+    /**
+     * Computes which of the last 7 days the user studied (answered at least one question).
+     * Index 0 = 6 days ago, index 6 = today.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @return list of 7 booleans
+     */
+    @Transactional(readOnly = true)
+    public List<Boolean> computeLastSevenDays(@Nonnull UUID userId, @Nonnull String productCode) {
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate sixDaysAgo = today.minusDays(6);
+        Instant startDate = sixDaysAgo.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant endDate = today.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+
+        Set<LocalDate> studyDates = sessionAnswerRepository
+                .findStudyDatesBetween(userId, productCode, startDate, endDate)
+                .stream()
+                .map(java.sql.Date::toLocalDate)
+                .collect(Collectors.toSet());
+
+        List<Boolean> result = new ArrayList<>(7);
+        for (int i = 0; i < 7; i++) {
+            result.add(studyDates.contains(sixDaysAgo.plusDays(i)));
+        }
+        return List.copyOf(result);
+    }
+
+    private void publishStreakEvent(UUID tenantId, UUID userId, String productCode,
+                                   int currentStreak, int longestStreak, boolean milestone, boolean atRisk) {
+        try {
+            StreakUpdatedEvent event = StreakUpdatedEvent.create(
+                    tenantId, userId, productCode, currentStreak, longestStreak, milestone, atRisk);
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setTenantId(tenantId);
+            outbox.setEventType(event.eventType());
+            outbox.setTopic(KafkaTopic.CONTENT_EVENTS);
+            outbox.setPayload(OBJECT_MAPPER.writeValueAsString(event));
+            outbox.setStatus(OutboxStatus.PENDING);
+            outbox.setPartitionKey(userId.toString());
+            outboxEventRepository.save(outbox);
+        } catch (JsonProcessingException e) {
+            LOG.error("Failed to serialize StreakUpdatedEvent for user={}", userId, e);
+        }
     }
 
     private Streak createNewStreak(UUID userId, String productCode) {

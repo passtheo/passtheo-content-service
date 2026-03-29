@@ -75,7 +75,7 @@ class EntitlementCheckerTest {
     void free_user_allowed_free_preview_domain() {
         when(valueOps.get(anyString())).thenReturn(null);
         StrapiDomainDto freePreviewDomain = new StrapiDomainDto(
-                "Verkeersborden", "verkeersborden", "verkeersborden",
+                1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
                 "desc", null, "#E63946", 50, true, true, 1);
         when(strapiContentCache.getDomains(anyString(), anyString()))
                 .thenReturn(List.of(freePreviewDomain));
@@ -87,7 +87,7 @@ class EntitlementCheckerTest {
     void free_user_denied_non_free_preview_domain() {
         when(valueOps.get(anyString())).thenReturn(null);
         StrapiDomainDto lockedDomain = new StrapiDomainDto(
-                "Voorrang", "voorrang", "voorrang",
+                1, null, "Voorrang", "voorrang", "voorrang",
                 "desc", null, "#1D3557", 40, true, false, 2);
         when(strapiContentCache.getDomains(anyString(), anyString()))
                 .thenReturn(List.of(lockedDomain));

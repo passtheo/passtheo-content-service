@@ -57,7 +57,8 @@ public class AchievementController {
             @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @RequestParam(required = false) String productCode) {
 
-        List<StrapiAchievementDefDto> allDefs = strapiContentCache.getAchievements();
+        String resolvedProductCode = productCode != null ? productCode : "";
+        List<StrapiAchievementDefDto> allDefs = strapiContentCache.getAchievements(resolvedProductCode);
         Map<String, EarnedAchievement> earnedMap = earnedAchievementRepository
                 .findByKeycloakUserId(userId).stream()
                 .collect(Collectors.toMap(EarnedAchievement::getAchievementCode, ea -> ea));

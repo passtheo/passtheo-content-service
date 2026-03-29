@@ -7,16 +7,18 @@ import java.util.List;
 /**
  * Composite readiness score for a student.
  *
- * @param readinessScore    composite score 0-100
- * @param coverageScore     coverage component 0-100
- * @param accuracyScore     accuracy component 0-100
- * @param examScore         exam component 0-100
- * @param readinessLabel    human-readable label
+ * @param readinessScore     composite score 0-100
+ * @param coverageScore      coverage component 0-100
+ * @param accuracyScore      accuracy component 0-100
+ * @param examScore          exam component 0-100
+ * @param readinessLabel     human-readable label
  * @param questionsAttempted total questions attempted
  * @param totalQuestions     total questions available
  * @param bestExamScore      best mock exam correct count (nullable)
  * @param examPassScore      pass score threshold
  * @param domainStrengths    per-domain strength breakdown
+ * @param examCountdownDays  days until scheduled exam (nullable if no exam date)
+ * @param predictedReadyDate predicted date at which readiness reaches 80% (nullable)
  */
 public record ReadinessScore(
     double readinessScore,
@@ -28,7 +30,9 @@ public record ReadinessScore(
     int totalQuestions,
     Integer bestExamScore,
     int examPassScore,
-    List<DomainStrengthValue> domainStrengths
+    List<DomainStrengthValue> domainStrengths,
+    Integer examCountdownDays,
+    java.time.LocalDate predictedReadyDate
 ) {
 
     /**

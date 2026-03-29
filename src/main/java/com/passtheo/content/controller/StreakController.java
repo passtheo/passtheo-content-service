@@ -5,6 +5,7 @@ import com.passtheo.content.dto.response.StreakDto;
 import com.passtheo.content.service.StreakService;
 import com.passtheo.shared.core.dto.ApiResponse;
 import jakarta.annotation.Nonnull;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -50,10 +51,11 @@ public class StreakController {
             @RequestParam @Nonnull String productCode) {
 
         StreakResult result = streakService.getStreak(userId, productCode);
+        List<Boolean> lastSevenDays = streakService.computeLastSevenDays(userId, productCode);
         StreakDto dto = new StreakDto(
                 result.currentStreak(), result.longestStreak(), result.totalStudyDays(),
                 result.lastStudyDate(), result.freezeSlotsAvailable(), result.freezeSlotsUsed(),
-                result.studiedToday(), result.streakAtRisk()
+                result.studiedToday(), result.streakAtRisk(), lastSevenDays
         );
         return ResponseEntity.ok(ApiResponse.success(dto, MDC.get("traceId")));
     }

@@ -5,25 +5,41 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
- * Strapi Question content type attributes — the core question data.
+ * Strapi 5 Question content type — flat format (no nested attributes wrapper).
+ * Relations (domain, topic, roadSigns) are inline objects when populated.
+ * Components (answerOptions, explanation, imageRegions, dragTargets) are inline arrays/objects.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiQuestionDto(
-    String id,
+    int id,
+    String documentId,
     String questionText,
     String interactionType,
     String difficulty,
-    String imageUrl,
     String videoUrl,
     Integer correctNumber,
     Integer correctNumberTolerance,
+    Boolean correctBoolean,
     int version,
+    boolean isActive,
+    boolean isPremium,
+    String reviewStatus,
+    String cbrReference,
+
+    // Components (inline, not wrapped in data)
     List<AnswerOptionDto> answerOptions,
     ExplanationDto explanation,
     List<ImageRegionDto> imageRegions,
     List<DragTargetDto> dragTargets,
-    String domainCode,
-    String topicCode
+
+    // Media (populated with fields[0]=url)
+    StrapiMediaDto image,
+    StrapiMediaDto video,
+
+    // Relations (inline objects when populated)
+    StrapiRelationDto domain,
+    StrapiRelationDto topic,
+    List<StrapiRelationDto> roadSigns
 ) {
 
     /**
@@ -31,7 +47,7 @@ public record StrapiQuestionDto(
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AnswerOptionDto(
-        String id,
+        int id,
         String text,
         String image,
         boolean isCorrect,
@@ -55,7 +71,7 @@ public record StrapiQuestionDto(
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ImageRegionDto(
-        String id,
+        int id,
         String label,
         double xPercent,
         double yPercent,
@@ -70,7 +86,7 @@ public record StrapiQuestionDto(
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record DragTargetDto(
-        String id,
+        int id,
         String label,
         String correctValue,
         boolean isCorrect,

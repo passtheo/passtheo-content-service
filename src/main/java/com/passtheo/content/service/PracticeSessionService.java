@@ -2,29 +2,36 @@ package com.passtheo.content.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.passtheo.content.domain.entity.OutboxEvent;
 import com.passtheo.content.domain.entity.QuestionProgress;
 import com.passtheo.content.domain.entity.SessionAnswer;
 import com.passtheo.content.domain.entity.StudySession;
 import com.passtheo.content.domain.enums.MasteryLevel;
+import com.passtheo.content.domain.enums.OutboxStatus;
 import com.passtheo.content.domain.enums.SessionStatus;
 import com.passtheo.content.domain.enums.SessionType;
 import com.passtheo.content.domain.valueobject.StreakResult;
 import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
+import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
+import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
+import com.passtheo.content.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StudySessionRepository;
 import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.core.exception.ErrorCode;
+import com.passtheo.shared.events.config.KafkaTopic;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -57,6 +64,7 @@ public class PracticeSessionService {
     private final StreakService streakService;
     private final AchievementService achievementService;
     private final StrapiContentCache strapiContentCache;
+    private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -70,6 +78,7 @@ public class PracticeSessionService {
      * @param streakService            streak management
      * @param achievementService       achievement checking
      * @param strapiContentCache       Strapi content cache
+     * @param outboxEventRepository    outbox event repository
      * @param objectMapper             JSON serializer
      */
     public PracticeSessionService(StudySessionRepository sessionRepository,
@@ -80,6 +89,7 @@ public class PracticeSessionService {
                                   StreakService streakService,
                                   AchievementService achievementService,
                                   StrapiContentCache strapiContentCache,
+                                  OutboxEventRepository outboxEventRepository,
                                   ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
         this.answerRepository = answerRepository;
@@ -89,6 +99,7 @@ public class PracticeSessionService {
         this.streakService = streakService;
         this.achievementService = achievementService;
         this.strapiContentCache = strapiContentCache;
+        this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -156,6 +167,17 @@ public class PracticeSessionService {
     @Transactional
     public AnswerResultDto submitAnswer(@Nonnull UUID userId, @Nonnull UUID sessionId,
                                         @Nonnull SubmitAnswerRequest request, @Nonnull String locale) {
+        try {
+            return doSubmitAnswer(userId, sessionId, request, locale);
+        } catch (DataIntegrityViolationException ex) {
+            LOG.warn("Duplicate answer detected for session={} question={}, returning existing result",
+                    sessionId, request.strapiQuestionId());
+            return buildExistingAnswerResult(userId, sessionId, request.strapiQuestionId(), locale);
+        }
+    }
+
+    private AnswerResultDto doSubmitAnswer(UUID userId, UUID sessionId,
+                                           SubmitAnswerRequest request, String locale) {
         StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Session not found: " + sessionId));
 
@@ -183,8 +205,8 @@ public class PracticeSessionService {
                     QuestionProgress qp = new QuestionProgress(
                             userId, request.strapiQuestionId(),
                             session.getProductCode(),
-                            question.domainCode() != null ? question.domainCode() : "",
-                            question.topicCode() != null ? question.topicCode() : "");
+                            question.domain() != null ? question.domain().code() : "",
+                            question.topic() != null ? question.topic().code() : "");
                     qp.setTenantId(TenantContext.get());
                     return qp;
                 });
@@ -207,6 +229,10 @@ public class PracticeSessionService {
                 request.timeTakenMs(), questionOrder);
         answer.setTenantId(TenantContext.get());
         answerRepository.save(answer);
+
+        // Publish question.answered outbox event
+        publishQuestionAnsweredEvent(TenantContext.get(), userId, sessionId,
+                request.strapiQuestionId(), isCorrect);
 
         // Update session counters
         session.setAnsweredCount(session.getAnsweredCount() + 1);
@@ -280,6 +306,115 @@ public class PracticeSessionService {
                 nextQuestion,
                 newAchievements
         );
+    }
+
+    private AnswerResultDto buildExistingAnswerResult(UUID userId, UUID sessionId,
+                                                      String strapiQuestionId, String locale) {
+        SessionAnswer existing = answerRepository.findBySessionIdAndStrapiQuestionId(sessionId, strapiQuestionId)
+                .orElseThrow(() -> new AppException(HttpStatus.CONFLICT, ErrorCode.VALIDATION_ERROR,
+                        "Duplicate answer but existing record not found"));
+        StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                        "Session not found: " + sessionId));
+        StrapiQuestionDto question = strapiContentCache.getQuestion(strapiQuestionId, locale);
+        Map<String, Object> correctAnswer = question != null
+                ? answerProcessingService.buildCorrectAnswer(question) : Map.of();
+        QuestionProgress progress = progressRepository
+                .findByKeycloakUserIdAndStrapiQuestionId(userId, strapiQuestionId).orElse(null);
+        double accuracyPercent = session.getAnsweredCount() > 0
+                ? (double) session.getCorrectCount() / session.getAnsweredCount() * 100.0 : 0.0;
+        AnswerResultDto.ExplanationDto explanation = null;
+        if (question != null && question.explanation() != null) {
+            explanation = new AnswerResultDto.ExplanationDto(
+                    question.explanation().text(), question.explanation().tip(),
+                    question.explanation().image(), question.explanation().legalReference());
+        }
+        return new AnswerResultDto(
+                existing.isCorrect(),
+                correctAnswer,
+                explanation,
+                new AnswerResultDto.MasteryUpdateDto(
+                        progress != null ? progress.getMasteryLevel().name() : MasteryLevel.NEW.name(),
+                        progress != null ? progress.getMasteryLevel().name() : MasteryLevel.NEW.name(),
+                        progress != null ? progress.getConsecutiveCorrect() : 0
+                ),
+                new AnswerResultDto.SessionProgressDto(
+                        session.getAnsweredCount(),
+                        session.getCorrectCount(),
+                        session.getTotalQuestions(),
+                        accuracyPercent
+                ),
+                null,
+                List.of()
+        );
+    }
+
+    private void publishQuestionAnsweredEvent(UUID tenantId, UUID userId, UUID sessionId,
+                                              String strapiQuestionId, boolean correct) {
+        try {
+            String payload = objectMapper.writeValueAsString(Map.of(
+                    "eventType", "QuestionAnswered",
+                    "tenantId", tenantId.toString(),
+                    "keycloakUserId", userId.toString(),
+                    "sessionId", sessionId.toString(),
+                    "strapiQuestionId", strapiQuestionId,
+                    "correct", correct
+            ));
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setTenantId(tenantId);
+            outbox.setEventType("QuestionAnswered");
+            outbox.setTopic(KafkaTopic.CONTENT_EVENTS);
+            outbox.setPayload(payload);
+            outbox.setStatus(OutboxStatus.PENDING);
+            outbox.setPartitionKey(userId.toString());
+            outboxEventRepository.save(outbox);
+        } catch (JsonProcessingException e) {
+            LOG.error("Failed to serialize QuestionAnswered outbox event for user={}", userId, e);
+        }
+    }
+
+    /**
+     * Gets the most recent in-progress session for the dashboard "Continue Practicing" card.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param locale      the content locale for domain name resolution
+     * @return the active session DTO, or null if no active session exists
+     */
+    @Transactional(readOnly = true)
+    public ActiveSessionDto getActiveSession(@Nonnull UUID userId, @Nonnull String productCode,
+                                             @Nonnull String locale) {
+        return sessionRepository
+                .findFirstByKeycloakUserIdAndProductCodeAndStatusOrderByLastActivityAtDesc(
+                        userId, productCode, SessionStatus.IN_PROGRESS)
+                .map(session -> {
+                    String domainName = resolveDomainName(session.getDomainCode(), productCode, locale);
+                    int progressPercent = session.getTotalQuestions() > 0
+                            ? (session.getAnsweredCount() * 100) / session.getTotalQuestions()
+                            : 0;
+                    return new ActiveSessionDto(
+                            session.getId(),
+                            session.getDomainCode(),
+                            domainName,
+                            session.getSessionType().name(),
+                            session.getTotalQuestions(),
+                            session.getAnsweredCount(),
+                            progressPercent,
+                            session.getStartedAt()
+                    );
+                })
+                .orElse(null);
+    }
+
+    private String resolveDomainName(String domainCode, String productCode, String locale) {
+        if (domainCode == null) {
+            return null;
+        }
+        return strapiContentCache.getDomains(productCode, locale).stream()
+                .filter(d -> d.code().equals(domainCode))
+                .findFirst()
+                .map(StrapiDomainDto::name)
+                .orElse(domainCode);
     }
 
     /**
@@ -387,19 +522,19 @@ public class PracticeSessionService {
             );
         }
         return new QuestionDto(
-                q.id(), q.questionText(), q.interactionType(), q.difficulty(),
-                q.imageUrl(), q.videoUrl(),
+                q.documentId(), q.questionText(), q.interactionType(), q.difficulty(),
+                q.image() != null ? q.image().url() : null, q.videoUrl(),
                 q.answerOptions() != null ? q.answerOptions().stream()
-                        .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
+                        .map(o -> new QuestionDto.AnswerOptionDto(String.valueOf(o.id()), o.text(), o.image()))
                         .toList() : null,
                 q.imageRegions() != null ? q.imageRegions().stream()
                         .map(r -> new QuestionDto.ImageRegionDto(
-                                r.id(), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
+                                String.valueOf(r.id()), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
                         .toList() : null,
                 q.dragTargets() != null ? q.dragTargets().stream()
-                        .map(t -> new QuestionDto.DragTargetDto(t.id(), t.label(), t.image()))
+                        .map(t -> new QuestionDto.DragTargetDto(String.valueOf(t.id()), t.label(), t.image()))
                         .toList() : null,
-                order, q.domainCode(), explanation
+                order, q.domain() != null ? q.domain().code() : null, explanation
         );
     }
 

@@ -8,11 +8,14 @@ import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.PlanDayStatus;
 import com.passtheo.content.domain.enums.PlanStatus;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
+import com.passtheo.content.domain.enums.MasteryLevel;
 import com.passtheo.content.dto.request.GenerateStudyPlanRequest;
 import com.passtheo.content.dto.response.StudyPlanDayDto;
 import com.passtheo.content.dto.response.StudyPlanDto;
+import com.passtheo.content.client.UserServiceClient;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
+import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.StudyPlanDayRepository;
 import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.shared.core.context.TenantContext;
@@ -61,26 +64,34 @@ public class StudyPlanService {
     private final ReadinessService readinessService;
     private final StrapiContentCache strapiContentCache;
     private final ObjectMapper objectMapper;
+    private final UserServiceClient userServiceClient;
+    private final QuestionProgressRepository progressRepository;
 
     /**
      * Constructs the study plan service.
      *
-     * @param planRepository    study plan repository
-     * @param planDayRepository study plan day repository
-     * @param readinessService  readiness score service
+     * @param planRepository     study plan repository
+     * @param planDayRepository  study plan day repository
+     * @param readinessService   readiness score service
      * @param strapiContentCache Strapi content cache
-     * @param objectMapper      JSON serializer
+     * @param objectMapper       JSON serializer
+     * @param userServiceClient  user-service client for exam date fallback
+     * @param progressRepository question progress repository for mastered count
      */
     public StudyPlanService(StudyPlanRepository planRepository,
                             StudyPlanDayRepository planDayRepository,
                             ReadinessService readinessService,
                             StrapiContentCache strapiContentCache,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            UserServiceClient userServiceClient,
+                            QuestionProgressRepository progressRepository) {
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;
         this.readinessService = readinessService;
         this.strapiContentCache = strapiContentCache;
         this.objectMapper = objectMapper;
+        this.userServiceClient = userServiceClient;
+        this.progressRepository = progressRepository;
     }
 
     /**
@@ -106,12 +117,43 @@ public class StudyPlanService {
         ReadinessScore readiness = readinessService.calculate(userId, request.productCode(), locale);
 
         LocalDate startDate = LocalDate.now(ZoneOffset.UTC);
+        LocalDate resolvedExamDate = request.examDate();
+        if (resolvedExamDate == null) {
+            UUID tenantId = TenantContext.get();
+            resolvedExamDate = userServiceClient.getProfile(userId, tenantId)
+                    .map(p -> p.examDate())
+                    .orElse(null);
+            if (resolvedExamDate != null) {
+                LOG.debug("Using exam date from user profile fallback: {}", resolvedExamDate);
+            }
+        }
+
         int totalDays;
-        if (request.examDate() != null) {
-            totalDays = (int) ChronoUnit.DAYS.between(startDate, request.examDate());
+        if (resolvedExamDate != null) {
+            totalDays = (int) ChronoUnit.DAYS.between(startDate, resolvedExamDate);
             totalDays = Math.max(MIN_PLAN_DAYS, Math.min(totalDays, MAX_PLAN_DAYS));
         } else {
             totalDays = DEFAULT_PLAN_DAYS;
+        }
+
+        // Resolve dailyQuestionTarget: auto-calculate when not provided
+        int resolvedDailyTarget;
+        if (request.dailyQuestionTarget() != null) {
+            resolvedDailyTarget = request.dailyQuestionTarget();
+        } else if (resolvedExamDate != null) {
+            long daysUntilExam = ChronoUnit.DAYS.between(startDate, resolvedExamDate);
+            if (daysUntilExam > 0) {
+                long totalQuestions = strapiContentCache.getQuestionCount(request.productCode(), locale);
+                long mastered = progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
+                        userId, request.productCode(), MasteryLevel.MASTERED);
+                long remaining = Math.max(totalQuestions - mastered, 0);
+                resolvedDailyTarget = (int) Math.min(50, Math.max(5,
+                        (long) Math.ceil((double) remaining / daysUntilExam)));
+            } else {
+                resolvedDailyTarget = 20;
+            }
+        } else {
+            resolvedDailyTarget = 20;
         }
 
         // Sort domains by weakness; fall back to all Strapi domains if no progress exists
@@ -138,7 +180,7 @@ public class StudyPlanService {
                 day.setDayNumber(dayNumber);
                 day.setPlanDate(planDate);
                 day.setDomainCode(entry.getKey());
-                day.setQuestionTarget(request.dailyQuestionTarget());
+                day.setQuestionTarget(resolvedDailyTarget);
                 day.setQuestionsCompleted(0);
                 day.setIncludeExam(dayNumber % EXAM_INTERVAL_DAYS == 0);
                 day.setStatus(PlanDayStatus.PENDING);
@@ -178,7 +220,7 @@ public class StudyPlanService {
         plan.setExamDate(request.examDate());
         plan.setTotalDays(days.size());
         plan.setStatus(PlanStatus.ACTIVE);
-        plan.setDailyQuestionTarget(request.dailyQuestionTarget());
+        plan.setDailyQuestionTarget(resolvedDailyTarget);
         plan.setFocusDomains(serializeJson(focusDomains));
         plan.setUpdatedAt(Instant.now());
         plan = planRepository.save(plan);

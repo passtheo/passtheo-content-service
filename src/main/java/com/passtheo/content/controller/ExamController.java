@@ -5,7 +5,6 @@ import com.passtheo.content.dto.request.SubmitExamRequest;
 import com.passtheo.content.dto.response.ExamDto;
 import com.passtheo.content.dto.response.ExamHistorySummaryDto;
 import com.passtheo.content.dto.response.ExamResultDto;
-import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.MockExamService;
 import com.passtheo.shared.core.dto.ApiResponse;
@@ -27,8 +26,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,21 +40,17 @@ public class ExamController {
 
     private final MockExamService mockExamService;
     private final EntitlementChecker entitlementChecker;
-    private final ExamAttemptRepository examAttemptRepository;
 
     /**
      * Constructs the exam controller.
      *
-     * @param mockExamService      mock exam service
-     * @param entitlementChecker   entitlement checker
-     * @param examAttemptRepository exam attempt repository
+     * @param mockExamService    mock exam service
+     * @param entitlementChecker entitlement checker
      */
     public ExamController(MockExamService mockExamService,
-                          EntitlementChecker entitlementChecker,
-                          ExamAttemptRepository examAttemptRepository) {
+                          EntitlementChecker entitlementChecker) {
         this.mockExamService = mockExamService;
         this.entitlementChecker = entitlementChecker;
-        this.examAttemptRepository = examAttemptRepository;
     }
 
     /**
@@ -74,17 +67,13 @@ public class ExamController {
             @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @RequestBody @Valid @Nonnull StartExamRequest request) {
 
-        // Check weekly exam limit for free users
+        // Block mock exams entirely for free users
         if (!entitlementChecker.canStartExam(tenantId, userId)) {
-            long recentExams = examAttemptRepository.countRecentExams(userId, request.productCode(),
-                    Instant.now().minus(7, ChronoUnit.DAYS));
-            if (recentExams >= 1) {
-                ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
-                problem.setTitle("Weekly exam limit reached");
-                problem.setDetail("Free users can take 1 mock exam per week");
-                problem.setType(URI.create("about:blank"));
-                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(problem);
-            }
+            ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                    HttpStatus.FORBIDDEN, "Upgrade to Pro to take mock exams.");
+            problem.setType(URI.create("https://api.passtheo.nl/errors/premium-required"));
+            problem.setTitle("Premium required");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
         }
 
         ExamDto exam = mockExamService.startExam(userId, request);

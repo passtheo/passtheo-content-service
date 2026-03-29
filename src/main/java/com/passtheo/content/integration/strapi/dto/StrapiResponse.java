@@ -5,43 +5,32 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
- * Generic Strapi REST API response wrapper.
+ * Strapi 5 REST API response wrapper for collection endpoints.
+ * Strapi 5 returns flat objects in data (no nested id/attributes like Strapi 4).
  *
  * @param <T> the data element type
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiResponse<T>(
-    List<StrapiDataWrapper<T>> data,
-    StrapiMeta meta
-) {
-
-    /**
-     * Strapi data wrapper with id and attributes.
-     *
-     * @param <T> the attributes type
-     */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record StrapiDataWrapper<T>(
-        String id,
-        T attributes
-    ) {}
+        List<T> data,
+        StrapiMeta meta) {
 
     /**
      * Strapi pagination metadata.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record StrapiMeta(
-        StrapiPagination pagination
-    ) {}
+            StrapiPagination pagination) {
+    }
 
     /**
      * Strapi pagination info.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record StrapiPagination(
-        int page,
-        int pageSize,
-        int pageCount,
-        int total
-    ) {}
+            int page,
+            int pageSize,
+            int pageCount,
+            int total) {
+    }
 }

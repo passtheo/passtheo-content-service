@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.domain.entity.ExamAnswer;
 import com.passtheo.content.domain.entity.ExamAttempt;
+import com.passtheo.content.domain.entity.OutboxEvent;
 import com.passtheo.content.domain.enums.ExamType;
+import com.passtheo.content.domain.enums.OutboxStatus;
 import com.passtheo.content.dto.request.StartExamRequest;
 import com.passtheo.content.dto.request.SubmitExamRequest;
 import com.passtheo.content.dto.response.AnswerResultDto;
@@ -18,9 +20,12 @@ import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.repository.ExamAnswerRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
+import com.passtheo.content.repository.OutboxEventRepository;
 import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.core.exception.ErrorCode;
+import com.passtheo.shared.events.config.KafkaTopic;
+import com.passtheo.shared.events.content.ExamCompletedEvent;
 import org.springframework.http.HttpStatus;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -39,6 +44,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -58,6 +64,7 @@ public class MockExamService {
     private final AnswerProcessingService answerProcessingService;
     private final AchievementService achievementService;
     private final ReadinessService readinessService;
+    private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -69,6 +76,7 @@ public class MockExamService {
      * @param answerProcessingService answer grading
      * @param achievementService     achievement checking
      * @param readinessService       readiness score calculator
+     * @param outboxEventRepository  outbox event repository
      * @param objectMapper           JSON serializer
      */
     public MockExamService(ExamAttemptRepository examAttemptRepository,
@@ -77,6 +85,7 @@ public class MockExamService {
                            AnswerProcessingService answerProcessingService,
                            AchievementService achievementService,
                            ReadinessService readinessService,
+                           OutboxEventRepository outboxEventRepository,
                            ObjectMapper objectMapper) {
         this.examAttemptRepository = examAttemptRepository;
         this.examAnswerRepository = examAnswerRepository;
@@ -84,6 +93,7 @@ public class MockExamService {
         this.answerProcessingService = answerProcessingService;
         this.achievementService = achievementService;
         this.readinessService = readinessService;
+        this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -115,12 +125,8 @@ public class MockExamService {
             LOG.warn("Not enough questions: have={}, need={}", allQuestions.size(), examConfig.totalQuestions());
         }
 
-        // Shuffle and select required number
-        List<StrapiQuestionDto> shuffled = new ArrayList<>(allQuestions);
-        Collections.shuffle(shuffled);
-        List<StrapiQuestionDto> examQuestions = shuffled.stream()
-                .limit(examConfig.totalQuestions())
-                .toList();
+        // Select questions using domain weights + difficulty distribution
+        List<StrapiQuestionDto> examQuestions = selectQuestions(allQuestions, examConfig);
 
         // Create exam attempt (placeholder — completed on submit)
         UUID examId = UUID.randomUUID();
@@ -138,19 +144,19 @@ public class MockExamService {
                             q.explanation().legalReference(), q.explanation().image())
                     : null;
             questionDtos.add(new QuestionDto(
-                    q.id(), q.questionText(), q.interactionType(), q.difficulty(),
-                    q.imageUrl(), q.videoUrl(),
+                    q.documentId(), q.questionText(), q.interactionType(), q.difficulty(),
+                    q.image() != null ? q.image().url() : null, q.videoUrl(),
                     q.answerOptions() != null ? q.answerOptions().stream()
-                            .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
+                            .map(o -> new QuestionDto.AnswerOptionDto(String.valueOf(o.id()), o.text(), o.image()))
                             .toList() : null,
                     q.imageRegions() != null ? q.imageRegions().stream()
                             .map(r -> new QuestionDto.ImageRegionDto(
-                                    r.id(), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
+                                    String.valueOf(r.id()), r.xPercent(), r.yPercent(), r.widthPercent(), r.heightPercent()))
                             .toList() : null,
                     q.dragTargets() != null ? q.dragTargets().stream()
-                            .map(t -> new QuestionDto.DragTargetDto(t.id(), t.label(), t.image()))
+                            .map(t -> new QuestionDto.DragTargetDto(String.valueOf(t.id()), t.label(), t.image()))
                             .toList() : null,
-                    i + 1, q.domainCode(), examExplanation
+                    i + 1, q.domain() != null ? q.domain().code() : null, examExplanation
             ));
         }
 
@@ -218,7 +224,7 @@ public class MockExamService {
                 correctCount++;
             }
 
-            String domainCode = question.domainCode() != null ? question.domainCode() : "unknown";
+            String domainCode = question.domain() != null ? question.domain().code() : "unknown";
             domainStats.computeIfAbsent(domainCode, k -> new int[]{0, 0});
             domainStats.get(domainCode)[1]++;
             if (isCorrect) {
@@ -286,6 +292,14 @@ public class MockExamService {
         List<EarnedAchievementDto> achievements = achievementService
                 .checkAchievements(userId, attempt.getProductCode());
 
+        // Publish exam.completed outbox event
+        List<String> weakDomains = domainStats.entrySet().stream()
+                .filter(e -> e.getValue()[1] > 0 && (double) e.getValue()[0] / e.getValue()[1] < 0.6)
+                .map(Map.Entry::getKey)
+                .toList();
+        publishExamCompletedEvent(TenantContext.get(), userId, examId,
+                attempt.getProductCode(), passed, correctCount, totalQuestions, scorePercent, weakDomains);
+
         LOG.info("Mock exam submitted: id={}, user={}, correct={}/{}, passed={}",
                 examId, userId, correctCount, totalQuestions, passed);
 
@@ -317,6 +331,108 @@ public class MockExamService {
                         a.getTotalQuestions(), a.getScorePercent().doubleValue(),
                         a.getCompletedAt()))
                 .toList();
+    }
+
+    private void publishExamCompletedEvent(java.util.UUID tenantId, java.util.UUID userId,
+                                            java.util.UUID examAttemptId, String productCode,
+                                            boolean passed, int correctCount, int totalQuestions,
+                                            double scorePercent, List<String> weakDomains) {
+        try {
+            ExamCompletedEvent event = ExamCompletedEvent.create(
+                    tenantId, userId, examAttemptId, productCode,
+                    passed, correctCount, totalQuestions, scorePercent, weakDomains);
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setTenantId(tenantId);
+            outbox.setEventType(event.eventType());
+            outbox.setTopic(KafkaTopic.CONTENT_EVENTS);
+            outbox.setPayload(objectMapper.writeValueAsString(event));
+            outbox.setStatus(OutboxStatus.PENDING);
+            outbox.setPartitionKey(userId.toString());
+            outboxEventRepository.save(outbox);
+        } catch (JsonProcessingException e) {
+            LOG.error("Failed to serialize ExamCompletedEvent for user={}", userId, e);
+        }
+    }
+
+    /**
+     * Selects exam questions using domain weights and difficulty distribution from ExamConfig.
+     * Falls back to simple shuffle-and-limit if no domainWeights are configured.
+     */
+    private List<StrapiQuestionDto> selectQuestions(List<StrapiQuestionDto> allQuestions,
+                                                     StrapiExamConfigDto examConfig) {
+        List<StrapiExamConfigDto.DomainWeightDto> weights = examConfig.domainWeights();
+        Map<String, Double> difficultyDist = examConfig.difficultyDistribution();
+        int totalTarget = examConfig.totalQuestions();
+
+        // Phase 1: domain-weighted selection
+        List<StrapiQuestionDto> domainSelected;
+        if (weights != null && !weights.isEmpty()) {
+            Map<String, List<StrapiQuestionDto>> byDomain = allQuestions.stream()
+                    .collect(Collectors.groupingBy(q -> q.domain() != null ? q.domain().code() : ""));
+            List<StrapiQuestionDto> selected = new ArrayList<>();
+            for (StrapiExamConfigDto.DomainWeightDto w : weights) {
+                List<StrapiQuestionDto> pool = new ArrayList<>(
+                        byDomain.getOrDefault(w.domainCode(), List.of()));
+                Collections.shuffle(pool);
+                int take = pool.size() >= w.targetQuestions() ? w.targetQuestions()
+                        : Math.min(pool.size(), w.minQuestions());
+                selected.addAll(pool.subList(0, take));
+            }
+            // If we ended up with fewer than target (small pools), top up from remaining questions
+            if (selected.size() < totalTarget) {
+                Set<String> selectedIds = selected.stream()
+                        .map(StrapiQuestionDto::documentId).collect(Collectors.toSet());
+                List<StrapiQuestionDto> remainder = allQuestions.stream()
+                        .filter(q -> !selectedIds.contains(q.documentId()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+                Collections.shuffle(remainder);
+                int need = totalTarget - selected.size();
+                selected.addAll(remainder.subList(0, Math.min(need, remainder.size())));
+            }
+            domainSelected = selected;
+        } else {
+            // No domain weights: simple shuffle
+            List<StrapiQuestionDto> shuffled = new ArrayList<>(allQuestions);
+            Collections.shuffle(shuffled);
+            domainSelected = shuffled.stream().limit(totalTarget).collect(Collectors.toList());
+        }
+
+        // Phase 2: difficulty distribution within selected pool
+        if (difficultyDist != null && !difficultyDist.isEmpty()) {
+            Map<String, List<StrapiQuestionDto>> byDifficulty = domainSelected.stream()
+                    .collect(Collectors.groupingBy(q -> q.difficulty() != null ? q.difficulty() : "medium"));
+            List<StrapiQuestionDto> distributed = new ArrayList<>();
+            for (Map.Entry<String, Double> entry : difficultyDist.entrySet()) {
+                String difficulty = entry.getKey();
+                int target = (int) Math.round(entry.getValue() * totalTarget);
+                List<StrapiQuestionDto> pool = new ArrayList<>(
+                        byDifficulty.getOrDefault(difficulty, List.of()));
+                Collections.shuffle(pool);
+                distributed.addAll(pool.subList(0, Math.min(target, pool.size())));
+            }
+            // Fill any gap from remaining questions if difficulty buckets ran short
+            if (distributed.size() < totalTarget) {
+                Set<String> usedIds = distributed.stream()
+                        .map(StrapiQuestionDto::documentId).collect(Collectors.toSet());
+                List<StrapiQuestionDto> remaining = domainSelected.stream()
+                        .filter(q -> !usedIds.contains(q.documentId()))
+                        .collect(Collectors.toCollection(ArrayList::new));
+                Collections.shuffle(remaining);
+                int need = totalTarget - distributed.size();
+                distributed.addAll(remaining.subList(0, Math.min(need, remaining.size())));
+            }
+            // Truncate if over target (rounding may produce excess)
+            List<StrapiQuestionDto> result = distributed.size() > totalTarget
+                    ? distributed.subList(0, totalTarget) : distributed;
+            Collections.shuffle(result);
+            return List.copyOf(result);
+        }
+
+        // No difficulty distribution: just shuffle domain selection and limit
+        Collections.shuffle(domainSelected);
+        return domainSelected.size() > totalTarget
+                ? List.copyOf(domainSelected.subList(0, totalTarget))
+                : List.copyOf(domainSelected);
     }
 
     private String serializeJson(Object obj) {

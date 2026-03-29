@@ -6,6 +6,8 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
       - org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceInitializationAutoConfiguration
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/content_db}
@@ -27,6 +29,7 @@ spring:
         format_sql: true
         jdbc:
           time_zone: UTC
+        default_schema: public
 
   flyway:
     enabled: true
@@ -55,6 +58,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:password}
       database: ${REDIS_DATABASE:3}
 
 server:
@@ -101,6 +105,8 @@ passtheo:
     api-token: ${STRAPI_API_TOKEN:strapi-api-token}
   subscription-service:
     base-url: ${SUBSCRIPTION_SERVICE_URL:http://localhost:8083}
+  user-service:
+    base-url: ${USER_SERVICE_URL:http://localhost:8082}
   content-cache:
     ttl-seconds: ${CONTENT_CACHE_TTL_SECONDS:3600}
   free-tier:

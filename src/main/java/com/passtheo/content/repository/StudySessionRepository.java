@@ -39,6 +39,17 @@ public interface StudySessionRepository extends JpaRepository<StudySession, UUID
             @Nonnull SessionStatus status, @Nonnull Instant threshold);
 
     /**
+     * Finds the most recently active IN_PROGRESS session for a user and product.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @param status         the session status (IN_PROGRESS)
+     * @return the most recent active session, if any
+     */
+    Optional<StudySession> findFirstByKeycloakUserIdAndProductCodeAndStatusOrderByLastActivityAtDesc(
+            @Nonnull UUID keycloakUserId, @Nonnull String productCode, @Nonnull SessionStatus status);
+
+    /**
      * Counts active sessions for a user/product.
      *
      * @param keycloakUserId the user's Keycloak ID

@@ -33,6 +33,64 @@ tags:
 
 paths:
   # ─── CONTENT HIERARCHY ───
+  /api/content/onboarding-catalog:
+    get:
+      operationId: getOnboardingCatalog
+      tags: [Content]
+      summary: Get full content catalog for onboarding
+      description: |
+        Returns the complete nested tree of countries, product types,
+        and products in one response. Used by Flutter during onboarding
+        to avoid 3 sequential API calls. Also includes app config
+        for maintenance mode and version checks.
+        
+        Public endpoint — no authentication required.
+        Cached in Redis under key "strapi:onboarding-catalog" for 1 hour.
+      security: []
+      responses:
+        '200':
+          description: Full onboarding catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_OnboardingCatalog'
+              example:
+                success: true
+                data:
+                  countries:
+                    - code: "NL"
+                      name: "Nederland"
+                      flagImage: "https://cdn.passtheo.nl/flags/nl.svg"
+                      supportedLocales: ["nl", "en", "ar", "tr", "pl"]
+                      productTypes:
+                        - code: "cbr"
+                          name: "CBR Rijexamen"
+                          description: "Theorie-examen voor het rijbewijs"
+                          icon: "https://cdn.passtheo.nl/icons/cbr.svg"
+                          regulatoryBody: "Centraal Bureau Rijvaardigheidsbewijzen"
+                          products:
+                            - code: "auto-b"
+                              name: "Auto Theorie (B)"
+                              licenceCode: "B"
+                              description: "Theorie-examen personenauto rijbewijs B"
+                              icon: "https://cdn.passtheo.nl/icons/auto-b.svg"
+                              isPremium: false
+                              examConfig:
+                                totalQuestions: 50
+                                timeLimitMinutes: 30
+                                passScore: 44
+                              domainCount: 6
+                              totalQuestions: 487
+                  appConfig:
+                    maintenanceMode: false
+                    minimumAppVersion: "1.0.0"
+                    freeDailyQuestionLimit: 10
+                    freeWeeklyExamLimit: 0
+                    freeDomainLimit: 2
+                    supportEmail: "support@passtheo.nl"
+                  supportedLocales: ["nl", "en", "ar", "tr", "pl"]
+                timestamp: "2026-03-25T10:00:00Z"
+
   /api/content/countries:
     get:
       operationId: listCountries
@@ -248,6 +306,57 @@ paths:
                 $ref: '#/components/schemas/ApiResponse_LessonList'
 
   # ─── PRACTICE SESSIONS ───
+  /api/practice/sessions/active:
+    get:
+      operationId: getActiveSession
+      tags: [Practice]
+      summary: Get most recent in-progress session for dashboard
+      description: |
+        Returns the user's most recently active IN_PROGRESS practice session,
+        or null if no active session exists. Used by the Flutter dashboard
+        "Continue Practicing" card.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/UserHeader'
+        - name: productCode
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/LocaleQuery'
+      responses:
+        '200':
+          description: Active session or null
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ActiveSession'
+              examples:
+                activeSession:
+                  summary: User has an in-progress session
+                  value:
+                    success: true
+                    data:
+                      sessionId: "770e8400-e29b-41d4-a716-446655440001"
+                      domainCode: "voorrang"
+                      domainName: "Voorrang"
+                      sessionType: "PRACTICE"
+                      totalQuestions: 20
+                      answeredQuestions: 7
+                      progressPercent: 35
+                      createdAt: "2026-03-25T14:30:00Z"
+                    timestamp: "2026-03-29T10:00:00Z"
+                noSession:
+                  summary: No active session
+                  value:
+                    success: true
+                    data: null
+                    timestamp: "2026-03-29T10:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/practice/sessions:
     post:
       operationId: startSession
@@ -510,9 +619,16 @@ paths:
                       domainCode: "verkeersborden"
                 timestamp: "2026-03-19T10:00:00Z"
         '403':
-          description: No active paid subscription
-        '429':
-          description: Weekly exam limit reached (free tier)
+          description: Premium required — free users cannot take mock exams
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+              example:
+                type: "https://api.passtheo.nl/errors/premium-required"
+                title: "Premium required"
+                status: 403
+                detail: "Upgrade to Pro to take mock exams."
 
   /api/exams/mock/{examId}/submit:
     post:
@@ -785,6 +901,7 @@ paths:
                   freezeSlotsUsed: 1
                   studiedToday: true
                   streakAtRisk: false
+                  lastSevenDays: [true, true, false, true, true, true, true]
                 timestamp: "2026-03-19T10:00:00Z"
 
   # ─── ACHIEVEMENTS ───
@@ -1220,6 +1337,13 @@ components:
         data: { $ref: '#/components/schemas/StreakDto' }
         timestamp: { type: string, format: date-time }
 
+    ApiResponse_ActiveSession:
+      type: object
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/ActiveSessionDto', nullable: true }
+        timestamp: { type: string, format: date-time }
+
     ApiResponse_AchievementList:
       type: object
       properties:
@@ -1240,6 +1364,75 @@ components:
         success: { type: boolean }
         data: { $ref: '#/components/schemas/StudyPlanDayDto' }
         timestamp: { type: string, format: date-time }
+
+    ApiResponse_OnboardingCatalog:
+      type: object
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/OnboardingCatalogDto' }
+        timestamp: { type: string, format: date-time }
+
+    OnboardingCatalogDto:
+      type: object
+      properties:
+        countries:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogCountryDto' }
+        appConfig: { $ref: '#/components/schemas/CatalogAppConfigDto' }
+        supportedLocales: { type: array, items: { type: string } }
+
+    CatalogCountryDto:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        flagImage: { type: string }
+        supportedLocales: { type: array, items: { type: string } }
+        productTypes:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogProductTypeDto' }
+
+    CatalogProductTypeDto:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+        icon: { type: string }
+        regulatoryBody: { type: string }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogProductDto' }
+
+    CatalogProductDto:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        licenceCode: { type: string }
+        description: { type: string }
+        icon: { type: string }
+        isPremium: { type: boolean }
+        examConfig: { $ref: '#/components/schemas/CatalogExamConfigDto' }
+        domainCount: { type: integer }
+        totalQuestions: { type: integer }
+
+    CatalogExamConfigDto:
+      type: object
+      properties:
+        totalQuestions: { type: integer }
+        timeLimitMinutes: { type: integer }
+        passScore: { type: integer }
+
+    CatalogAppConfigDto:
+      type: object
+      properties:
+        maintenanceMode: { type: boolean }
+        minimumAppVersion: { type: string }
+        freeDailyQuestionLimit: { type: integer }
+        freeWeeklyExamLimit: { type: integer }
+        freeDomainLimit: { type: integer }
+        supportEmail: { type: string }
 
     # ─── Entity DTOs ───
     CountryDto:
@@ -1326,7 +1519,17 @@ components:
       properties:
         title: { type: string }
         slug: { type: string }
-        content: { type: string }
+        sections:
+          type: array
+          items:
+            type: object
+            properties:
+              heading: { type: string, nullable: true }
+              body: { type: string, nullable: true }
+              tip: { type: string, nullable: true }
+              keyRule: { type: string, nullable: true }
+              relatedRoadSignCode: { type: string, nullable: true }
+              sortOrder: { type: integer }
         summary: { type: string }
         coverImage: { type: string }
         videoUrl: { type: string }
@@ -1565,6 +1768,19 @@ components:
         familiarPercent: { type: number }
         masteredPercent: { type: number }
 
+    ActiveSessionDto:
+      type: object
+      nullable: true
+      properties:
+        sessionId: { type: string, format: uuid }
+        domainCode: { type: string, nullable: true }
+        domainName: { type: string, nullable: true }
+        sessionType: { type: string, enum: [PRACTICE, QUICK_QUIZ, WEAK_REVIEW] }
+        totalQuestions: { type: integer }
+        answeredQuestions: { type: integer }
+        progressPercent: { type: integer }
+        createdAt: { type: string, format: date-time }
+
     StreakDto:
       type: object
       properties:
@@ -1576,6 +1792,10 @@ components:
         freezeSlotsUsed: { type: integer }
         studiedToday: { type: boolean }
         streakAtRisk: { type: boolean, description: "true if streak will break tomorrow without study" }
+        lastSevenDays:
+          type: array
+          items: { type: boolean }
+          description: "7 booleans, oldest to newest (index 0 = 6 days ago, index 6 = today)"
 
     AchievementDto:
       type: object
@@ -1590,6 +1810,7 @@ components:
         triggerValue: { type: integer }
         currentProgress: { type: integer, description: "user's current value toward this trigger" }
         progressPercent: { type: number }
+        productCode: { type: string, nullable: true, description: "null = platform-wide achievement" }
 
     EarnedAchievementDto:
       type: object
