@@ -13,11 +13,13 @@ import com.passtheo.content.domain.enums.SessionType;
 import com.passtheo.content.domain.valueobject.StreakResult;
 import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
+import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
+import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.repository.OutboxEventRepository;
@@ -360,6 +362,50 @@ public class PracticeSessionService {
         } catch (JsonProcessingException e) {
             LOG.error("Failed to serialize QuestionAnswered outbox event for user={}", userId, e);
         }
+    }
+
+    /**
+     * Gets the most recent in-progress session for the dashboard "Continue Practicing" card.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param locale      the content locale for domain name resolution
+     * @return the active session DTO, or null if no active session exists
+     */
+    @Transactional(readOnly = true)
+    public ActiveSessionDto getActiveSession(@Nonnull UUID userId, @Nonnull String productCode,
+                                             @Nonnull String locale) {
+        return sessionRepository
+                .findFirstByKeycloakUserIdAndProductCodeAndStatusOrderByLastActivityAtDesc(
+                        userId, productCode, SessionStatus.IN_PROGRESS)
+                .map(session -> {
+                    String domainName = resolveDomainName(session.getDomainCode(), productCode, locale);
+                    int progressPercent = session.getTotalQuestions() > 0
+                            ? (session.getAnsweredCount() * 100) / session.getTotalQuestions()
+                            : 0;
+                    return new ActiveSessionDto(
+                            session.getId(),
+                            session.getDomainCode(),
+                            domainName,
+                            session.getSessionType().name(),
+                            session.getTotalQuestions(),
+                            session.getAnsweredCount(),
+                            progressPercent,
+                            session.getStartedAt()
+                    );
+                })
+                .orElse(null);
+    }
+
+    private String resolveDomainName(String domainCode, String productCode, String locale) {
+        if (domainCode == null) {
+            return null;
+        }
+        return strapiContentCache.getDomains(productCode, locale).stream()
+                .filter(d -> d.code().equals(domainCode))
+                .findFirst()
+                .map(StrapiDomainDto::name)
+                .orElse(domainCode);
     }
 
     /**

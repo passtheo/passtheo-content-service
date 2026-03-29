@@ -3,8 +3,11 @@ package com.passtheo.content.repository;
 import com.passtheo.content.domain.entity.SessionAnswer;
 import jakarta.annotation.Nonnull;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,4 +42,30 @@ public interface SessionAnswerRepository extends JpaRepository<SessionAnswer, UU
      * @return the answer count
      */
     long countBySessionId(@Nonnull UUID sessionId);
+
+    /**
+     * Finds distinct dates on which the user answered at least one question.
+     * Used to compute the lastSevenDays streak dots.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param startDate   start of the date range (inclusive)
+     * @param endDate     end of the date range (exclusive)
+     * @return list of distinct study dates within the range
+     */
+    @Query(value = """
+            SELECT DISTINCT CAST(sa.answered_at AS DATE)
+            FROM session_answers sa
+            JOIN study_sessions ss ON sa.session_id = ss.id
+            WHERE ss.keycloak_user_id = :userId
+              AND ss.product_code = :productCode
+              AND sa.answered_at >= :startDate
+              AND sa.answered_at < :endDate
+            ORDER BY 1
+            """, nativeQuery = true)
+    List<java.sql.Date> findStudyDatesBetween(
+            @Param("userId") UUID userId,
+            @Param("productCode") String productCode,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate);
 }

@@ -2,6 +2,7 @@ package com.passtheo.content.controller;
 
 import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
+import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
@@ -50,6 +51,24 @@ public class PracticeController {
                               EntitlementChecker entitlementChecker) {
         this.practiceSessionService = practiceSessionService;
         this.entitlementChecker = entitlementChecker;
+    }
+
+    /**
+     * Gets the most recent in-progress session for the dashboard "Continue Practicing" card.
+     *
+     * @param userId      user ID from header
+     * @param productCode the product code
+     * @param locale      content locale
+     * @return active session or null
+     */
+    @GetMapping("/active")
+    public ResponseEntity<ApiResponse<ActiveSessionDto>> getActiveSession(
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @RequestParam @Nonnull String productCode,
+            @RequestParam(defaultValue = "nl") String locale) {
+
+        ActiveSessionDto dto = practiceSessionService.getActiveSession(userId, productCode, locale);
+        return ResponseEntity.ok(ApiResponse.success(dto, MDC.get("traceId")));
     }
 
     /**

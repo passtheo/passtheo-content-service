@@ -2,6 +2,8 @@ package com.passtheo.content.kafka.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.passtheo.content.domain.enums.PlanStatus;
+import com.passtheo.content.dto.request.GenerateStudyPlanRequest;
 import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.EarnedAchievementRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
@@ -10,7 +12,11 @@ import com.passtheo.content.repository.ReadinessSnapshotRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.content.repository.TopicProgressRepository;
+import com.passtheo.content.service.StudyPlanService;
+import com.passtheo.shared.core.context.TenantContext;
 import jakarta.annotation.Nonnull;
+
+import java.time.LocalDate;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +44,7 @@ public class UserEventConsumer {
     private final ExamAttemptRepository examAttemptRepository;
     private final ReadinessSnapshotRepository snapshotRepository;
     private final StudyPlanRepository planRepository;
+    private final StudyPlanService studyPlanService;
 
     /**
      * Constructs the user event consumer.
@@ -51,6 +58,7 @@ public class UserEventConsumer {
      * @param examAttemptRepository    exam attempt repository
      * @param snapshotRepository       readiness snapshot repository
      * @param planRepository           study plan repository
+     * @param studyPlanService         study plan service for auto-generation
      */
     public UserEventConsumer(ObjectMapper objectMapper,
                              QuestionProgressRepository progressRepository,
@@ -60,7 +68,8 @@ public class UserEventConsumer {
                              EarnedAchievementRepository achievementRepository,
                              ExamAttemptRepository examAttemptRepository,
                              ReadinessSnapshotRepository snapshotRepository,
-                             StudyPlanRepository planRepository) {
+                             StudyPlanRepository planRepository,
+                             StudyPlanService studyPlanService) {
         this.objectMapper = objectMapper;
         this.progressRepository = progressRepository;
         this.topicProgressRepository = topicProgressRepository;
@@ -70,6 +79,7 @@ public class UserEventConsumer {
         this.examAttemptRepository = examAttemptRepository;
         this.snapshotRepository = snapshotRepository;
         this.planRepository = planRepository;
+        this.studyPlanService = studyPlanService;
     }
 
     /**
@@ -97,6 +107,45 @@ public class UserEventConsumer {
 
                 LOG.info("GDPR delete triggered by user.deleted event: userId={}", userId);
                 deleteAllUserData(userId);
+
+            } else if ("UserOnboardingCompleted".equals(eventType)) {
+                String keycloakUserIdStr = payload.has("keycloakUserId")
+                        ? payload.get("keycloakUserId").asText(null) : null;
+                String tenantIdStr = payload.has("tenantId")
+                        ? payload.get("tenantId").asText(null) : null;
+                String productCode = payload.has("productCode")
+                        ? payload.get("productCode").asText(null) : null;
+                String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
+                        ? payload.get("examDate").asText(null) : null;
+
+                if (keycloakUserIdStr == null || tenantIdStr == null
+                        || productCode == null || productCode.isBlank()) {
+                    LOG.warn("Ignoring incomplete UserOnboardingCompleted event: offset={}", record.offset());
+                    ack.acknowledge();
+                    return;
+                }
+
+                UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
+                UUID tenantId = UUID.fromString(tenantIdStr);
+                LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+
+                boolean hasActivePlan = planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+                        keycloakUserId, productCode, PlanStatus.ACTIVE).isPresent();
+
+                if (!hasActivePlan) {
+                    LOG.info("Auto-generating study plan: userId={}, productCode={}, examDate={}",
+                            keycloakUserId, productCode, examDate);
+                    TenantContext.set(tenantId);
+                    try {
+                        studyPlanService.generatePlan(keycloakUserId,
+                                new GenerateStudyPlanRequest(productCode, examDate, null), "nl");
+                    } finally {
+                        TenantContext.clear();
+                    }
+                } else {
+                    LOG.debug("Skipping auto-generate: active plan exists for userId={}, productCode={}",
+                            keycloakUserId, productCode);
+                }
             }
 
             ack.acknowledge();
