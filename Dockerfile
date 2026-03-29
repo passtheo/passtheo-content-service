@@ -75,12 +75,4 @@ EXPOSE 8087
 # Note: Distroless doesn't include curl/wget, so we skip HEALTHCHECK in Dockerfile
 # Health checks are handled by docker-compose healthcheck configuration
 
-# Use system JRE to run the application
-ENTRYPOINT ["java", \
-    "-XX:+UseContainerSupport", \
-    "-XX:MaxRAMPercentage=75.0", \
-    "-XX:+ExitOnOutOfMemoryError", \
-    "-Djava.security.egd=file:/dev/./urandom", \
-    "-Dfile.encoding=UTF-8", \
-    "-Duser.timezone=UTC", \
-    "-jar", "app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]

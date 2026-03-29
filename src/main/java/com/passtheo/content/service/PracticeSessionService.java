@@ -15,6 +15,10 @@ import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
+import com.passtheo.content.domain.entity.DomainProgress;
+import com.passtheo.content.domain.valueobject.AccessGrant;
+import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
+import com.passtheo.content.dto.response.DomainSummaryDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.dto.response.SessionDto;
@@ -22,6 +26,7 @@ import com.passtheo.content.dto.response.SessionSummaryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
+import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
@@ -38,10 +43,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.Nullable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,9 +62,13 @@ public class PracticeSessionService {
     private static final Logger LOG = LoggerFactory.getLogger(PracticeSessionService.class);
     private static final Logger AUDIT = LoggerFactory.getLogger("AUDIT");
 
+    /** JSON representation of a skipped answer stored in session_answers.user_answer. */
+    private static final String SKIP_ANSWER_JSON = "null";
+
     private final StudySessionRepository sessionRepository;
     private final SessionAnswerRepository answerRepository;
     private final QuestionProgressRepository progressRepository;
+    private final DomainProgressRepository domainProgressRepository;
     private final QuestionSelectionService questionSelectionService;
     private final AnswerProcessingService answerProcessingService;
     private final StreakService streakService;
@@ -72,6 +83,7 @@ public class PracticeSessionService {
      * @param sessionRepository        study session repository
      * @param answerRepository         session answer repository
      * @param progressRepository       question progress repository
+     * @param domainProgressRepository domain progress repository
      * @param questionSelectionService question selection (spaced repetition)
      * @param answerProcessingService  answer grading + mastery update
      * @param streakService            streak management
@@ -83,6 +95,7 @@ public class PracticeSessionService {
     public PracticeSessionService(StudySessionRepository sessionRepository,
                                   SessionAnswerRepository answerRepository,
                                   QuestionProgressRepository progressRepository,
+                                  DomainProgressRepository domainProgressRepository,
                                   QuestionSelectionService questionSelectionService,
                                   AnswerProcessingService answerProcessingService,
                                   StreakService streakService,
@@ -93,6 +106,7 @@ public class PracticeSessionService {
         this.sessionRepository = sessionRepository;
         this.answerRepository = answerRepository;
         this.progressRepository = progressRepository;
+        this.domainProgressRepository = domainProgressRepository;
         this.questionSelectionService = questionSelectionService;
         this.answerProcessingService = answerProcessingService;
         this.streakService = streakService;
@@ -149,7 +163,8 @@ public class PracticeSessionService {
                 session.getTotalQuestions(),
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
-                firstQuestion
+                firstQuestion,
+                List.of()
         );
     }
 
@@ -189,13 +204,14 @@ public class PracticeSessionService {
             throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Question not found: " + request.strapiQuestionId());
         }
 
-        // Grade the answer
-        boolean isCorrect = answerProcessingService.gradeAnswer(question, request.answer());
+        // Grade the answer — null answer means skip (not wrong, no mastery change)
+        boolean isSkipped = request.answer() == null;
+        boolean isCorrect = !isSkipped && answerProcessingService.gradeAnswer(question, request.answer());
 
         // Build correct answer for response
         Map<String, Object> correctAnswer = answerProcessingService.buildCorrectAnswer(question);
 
-        // Get or create question progress and update mastery
+        // Get or create question progress and update mastery (skips don't affect mastery)
         QuestionProgress progress = progressRepository
                 .findByKeycloakUserIdAndStrapiQuestionId(userId, request.strapiQuestionId())
                 .orElseGet(() -> {
@@ -208,15 +224,21 @@ public class PracticeSessionService {
                     return qp;
                 });
 
-        MasteryLevel previousLevel = answerProcessingService.updateMastery(progress, isCorrect);
-        progress = progressRepository.save(progress);
+        MasteryLevel previousLevel;
+        if (isSkipped) {
+            previousLevel = progress.getMasteryLevel();
+        } else {
+            previousLevel = answerProcessingService.updateMastery(progress, isCorrect);
+            progress = progressRepository.save(progress);
+        }
 
-        // Record the answer
+        // Record the answer — use SKIP_ANSWER_JSON for skips (JSONB accepts JSON null)
         int questionOrder = session.getAnsweredCount() + 1;
+        String userAnswerJson = isSkipped ? SKIP_ANSWER_JSON : serializeJson(request.answer());
         SessionAnswer answer = new SessionAnswer(
                 sessionId, userId, request.strapiQuestionId(),
                 question.version(), question.interactionType(), isCorrect,
-                serializeJson(request.answer()), serializeJson(correctAnswer),
+                userAnswerJson, serializeJson(correctAnswer),
                 request.timeTakenMs(), questionOrder);
         answer.setTenantId(TenantContext.get());
         answerRepository.save(answer);
@@ -434,13 +456,23 @@ public class PracticeSessionService {
             }
         }
 
+        List<AnsweredQuestionSummaryDto> answeredQuestions = answerRepository
+                .findBySessionIdOrderByQuestionOrderAsc(sessionId).stream()
+                .map(a -> new AnsweredQuestionSummaryDto(
+                        a.getQuestionOrder(),
+                        a.getStrapiQuestionId(),
+                        a.isCorrect(),
+                        SKIP_ANSWER_JSON.equals(a.getUserAnswer())))
+                .toList();
+
         return new SessionDto(
                 session.getId(),
                 session.getStatus().name(),
                 session.getTotalQuestions(),
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
-                currentQuestion
+                currentQuestion,
+                answeredQuestions
         );
     }
 
@@ -493,8 +525,17 @@ public class PracticeSessionService {
         if (q == null) {
             return null;
         }
+        QuestionDto.ExplanationDto explanation = null;
+        if (q.explanation() != null) {
+            explanation = new QuestionDto.ExplanationDto(
+                    q.explanation().text(),
+                    q.explanation().tip(),
+                    q.explanation().legalReference(),
+                    q.explanation().image()
+            );
+        }
         return new QuestionDto(
-                q.documentId(), q.questionText(), q.interactionType(),
+                q.documentId(), q.questionText(), q.interactionType(), q.difficulty(),
                 q.image() != null ? q.image().url() : null, q.videoUrl(),
                 q.answerOptions() != null ? q.answerOptions().stream()
                         .map(o -> new QuestionDto.AnswerOptionDto(String.valueOf(o.id()), o.text(), o.image()))
@@ -506,8 +547,63 @@ public class PracticeSessionService {
                 q.dragTargets() != null ? q.dragTargets().stream()
                         .map(t -> new QuestionDto.DragTargetDto(String.valueOf(t.id()), t.label(), t.image()))
                         .toList() : null,
-                order, q.domain() != null ? q.domain().code() : null
+                order, q.domain() != null ? q.domain().code() : null, explanation
         );
+    }
+
+    /**
+     * Returns all active domains for a product with per-user mastery breakdown.
+     * When {@code userId} is null (e.g. direct API call bypassing the gateway),
+     * mastery stats are omitted (all zeros) and access defaults to free tier.
+     *
+     * @param userId      the user's Keycloak ID, or null if unauthenticated
+     * @param productCode the product code (e.g. "auto-b")
+     * @param locale      content locale
+     * @param access      the user's access grant (free or paid)
+     * @return sorted list of active domain summaries
+     */
+    @Transactional(readOnly = true)
+    public List<DomainSummaryDto> listPracticeDomains(
+            @Nullable UUID userId,
+            @Nonnull String productCode,
+            @Nonnull String locale,
+            @Nonnull AccessGrant access) {
+
+        List<StrapiDomainDto> domains = strapiContentCache.getDomains(productCode, locale);
+
+        Map<String, DomainProgress> progressMap = userId != null
+                ? domainProgressRepository.findByKeycloakUserIdAndProductCode(userId, productCode).stream()
+                        .collect(java.util.stream.Collectors.toMap(DomainProgress::getDomainCode, dp -> dp))
+                : Map.of();
+
+        return domains.stream()
+                .filter(StrapiDomainDto::isActive)
+                .sorted(Comparator.comparingInt(StrapiDomainDto::sortOrder))
+                .map(d -> {
+                    int totalQuestions = d.questionCount() != null ? d.questionCount() : 0;
+                    boolean isLocked = !access.isPaid() && !d.isFreePreview();
+                    DomainProgress dp = progressMap.get(d.code());
+
+                    int masteredCount = 0;
+                    int learningCount = 0;
+                    int newCount = totalQuestions;
+                    double masteryPercent = 0.0;
+
+                    if (dp != null) {
+                        masteredCount = dp.getMasteredCount();
+                        int attemptedCount = dp.getAttemptedCount();
+                        learningCount = Math.max(0, attemptedCount - masteredCount);
+                        newCount = Math.max(0, totalQuestions - attemptedCount);
+                        masteryPercent = totalQuestions > 0
+                                ? (double) masteredCount / totalQuestions * 100.0 : 0.0;
+                    }
+
+                    return new DomainSummaryDto(
+                            d.code(), d.name(), d.icon(), d.color(),
+                            totalQuestions, masteredCount, learningCount, newCount,
+                            masteryPercent, isLocked);
+                })
+                .toList();
     }
 
     private String serializeJson(Object obj) {
