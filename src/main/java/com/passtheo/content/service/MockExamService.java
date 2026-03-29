@@ -132,8 +132,14 @@ public class MockExamService {
         List<QuestionDto> questionDtos = new ArrayList<>();
         for (int i = 0; i < examQuestions.size(); i++) {
             StrapiQuestionDto q = examQuestions.get(i);
+            QuestionDto.ExplanationDto examExplanation = q.explanation() != null
+                    ? new QuestionDto.ExplanationDto(
+                            q.explanation().text(), q.explanation().tip(),
+                            q.explanation().legalReference(), q.explanation().image())
+                    : null;
             questionDtos.add(new QuestionDto(
-                    q.id(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
+                    q.id(), q.questionText(), q.interactionType(), q.difficulty(),
+                    q.imageUrl(), q.videoUrl(),
                     q.answerOptions() != null ? q.answerOptions().stream()
                             .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
                             .toList() : null,
@@ -144,7 +150,7 @@ public class MockExamService {
                     q.dragTargets() != null ? q.dragTargets().stream()
                             .map(t -> new QuestionDto.DragTargetDto(t.id(), t.label(), t.image()))
                             .toList() : null,
-                    i + 1, q.domainCode()
+                    i + 1, q.domainCode(), examExplanation
             ));
         }
 

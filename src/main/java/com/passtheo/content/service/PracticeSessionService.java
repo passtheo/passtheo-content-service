@@ -12,6 +12,7 @@ import com.passtheo.content.domain.valueobject.StreakResult;
 import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.AnswerResultDto;
+import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.dto.response.SessionDto;
@@ -138,7 +139,8 @@ public class PracticeSessionService {
                 session.getTotalQuestions(),
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
-                firstQuestion
+                firstQuestion,
+                List.of()
         );
     }
 
@@ -167,13 +169,14 @@ public class PracticeSessionService {
             throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Question not found: " + request.strapiQuestionId());
         }
 
-        // Grade the answer
-        boolean isCorrect = answerProcessingService.gradeAnswer(question, request.answer());
+        // Grade the answer — null answer means skip (not wrong, no mastery change)
+        boolean isSkipped = request.answer() == null;
+        boolean isCorrect = !isSkipped && answerProcessingService.gradeAnswer(question, request.answer());
 
         // Build correct answer for response
         Map<String, Object> correctAnswer = answerProcessingService.buildCorrectAnswer(question);
 
-        // Get or create question progress and update mastery
+        // Get or create question progress and update mastery (skips don't affect mastery)
         QuestionProgress progress = progressRepository
                 .findByKeycloakUserIdAndStrapiQuestionId(userId, request.strapiQuestionId())
                 .orElseGet(() -> {
@@ -186,15 +189,21 @@ public class PracticeSessionService {
                     return qp;
                 });
 
-        MasteryLevel previousLevel = answerProcessingService.updateMastery(progress, isCorrect);
-        progress = progressRepository.save(progress);
+        MasteryLevel previousLevel;
+        if (isSkipped) {
+            previousLevel = progress.getMasteryLevel();
+        } else {
+            previousLevel = answerProcessingService.updateMastery(progress, isCorrect);
+            progress = progressRepository.save(progress);
+        }
 
-        // Record the answer
+        // Record the answer — use "null" JSON for skips (JSONB accepts JSON null)
         int questionOrder = session.getAnsweredCount() + 1;
+        String userAnswerJson = isSkipped ? "null" : serializeJson(request.answer());
         SessionAnswer answer = new SessionAnswer(
                 sessionId, userId, request.strapiQuestionId(),
                 question.version(), question.interactionType(), isCorrect,
-                serializeJson(request.answer()), serializeJson(correctAnswer),
+                userAnswerJson, serializeJson(correctAnswer),
                 request.timeTakenMs(), questionOrder);
         answer.setTenantId(TenantContext.get());
         answerRepository.save(answer);
@@ -299,13 +308,23 @@ public class PracticeSessionService {
             }
         }
 
+        List<AnsweredQuestionSummaryDto> answeredQuestions = answerRepository
+                .findBySessionIdOrderByQuestionOrderAsc(sessionId).stream()
+                .map(a -> new AnsweredQuestionSummaryDto(
+                        a.getQuestionOrder(),
+                        a.getStrapiQuestionId(),
+                        a.isCorrect(),
+                        "null".equals(a.getUserAnswer())))
+                .toList();
+
         return new SessionDto(
                 session.getId(),
                 session.getStatus().name(),
                 session.getTotalQuestions(),
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
-                currentQuestion
+                currentQuestion,
+                answeredQuestions
         );
     }
 
@@ -358,8 +377,18 @@ public class PracticeSessionService {
         if (q == null) {
             return null;
         }
+        QuestionDto.ExplanationDto explanation = null;
+        if (q.explanation() != null) {
+            explanation = new QuestionDto.ExplanationDto(
+                    q.explanation().text(),
+                    q.explanation().tip(),
+                    q.explanation().legalReference(),
+                    q.explanation().image()
+            );
+        }
         return new QuestionDto(
-                q.id(), q.questionText(), q.interactionType(), q.imageUrl(), q.videoUrl(),
+                q.id(), q.questionText(), q.interactionType(), q.difficulty(),
+                q.imageUrl(), q.videoUrl(),
                 q.answerOptions() != null ? q.answerOptions().stream()
                         .map(o -> new QuestionDto.AnswerOptionDto(o.id(), o.text(), o.image()))
                         .toList() : null,
@@ -370,7 +399,7 @@ public class PracticeSessionService {
                 q.dragTargets() != null ? q.dragTargets().stream()
                         .map(t -> new QuestionDto.DragTargetDto(t.id(), t.label(), t.image()))
                         .toList() : null,
-                order, q.domainCode()
+                order, q.domainCode(), explanation
         );
     }
 

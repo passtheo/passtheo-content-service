@@ -9,13 +9,15 @@ public record QuestionDto(
     String strapiQuestionId,
     String questionText,
     String interactionType,
+    String difficulty,
     String imageUrl,
     String videoUrl,
     List<AnswerOptionDto> answerOptions,
     List<ImageRegionDto> imageRegions,
     List<DragTargetDto> dragTargets,
     int questionOrder,
-    String domainCode
+    String domainCode,
+    ExplanationDto explanation
 ) {
     /**
      * Answer option (without isCorrect).
@@ -43,6 +45,17 @@ public record QuestionDto(
     public record DragTargetDto(
         String id,
         String label,
+        String imageUrl
+    ) {}
+
+    /**
+     * Explanation shown via Reveal Hint (tip) and after answering.
+     * Included in the question payload so the tip is available before answering.
+     */
+    public record ExplanationDto(
+        String text,
+        String tip,
+        String legalReference,
         String imageUrl
     ) {}
 }
