@@ -9,6 +9,7 @@ import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.shared.core.dto.ApiResponse;
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -66,16 +67,19 @@ public class PracticeDomainController {
     @GetMapping("/domains")
     public ResponseEntity<ApiResponse<List<DomainSummaryDto>>> listPracticeDomains(
             @RequestHeader("X-Tenant-ID") UUID tenantId,
-            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @RequestHeader(value = "X-Keycloak-User-ID", required = false) @Nullable UUID userId,
             @RequestParam @Nonnull String productCode,
             @RequestParam(defaultValue = "nl") String locale) {
 
         List<StrapiDomainDto> domains = strapiContentCache.getDomains(productCode, locale);
-        AccessGrant access = entitlementChecker.getAccess(tenantId, userId);
+        AccessGrant access = userId != null
+                ? entitlementChecker.getAccess(tenantId, userId)
+                : AccessGrant.free();
 
-        Map<String, DomainProgress> progressMap = domainProgressRepository
-                .findByKeycloakUserIdAndProductCode(userId, productCode).stream()
-                .collect(Collectors.toMap(DomainProgress::getDomainCode, dp -> dp));
+        Map<String, DomainProgress> progressMap = userId != null
+                ? domainProgressRepository.findByKeycloakUserIdAndProductCode(userId, productCode).stream()
+                        .collect(Collectors.toMap(DomainProgress::getDomainCode, dp -> dp))
+                : Map.of();
 
         List<DomainSummaryDto> result = domains.stream()
                 .filter(StrapiDomainDto::isActive)
