@@ -7,6 +7,7 @@ import com.passtheo.content.domain.enums.SessionType;
 import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
+import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
@@ -38,6 +39,7 @@ class PracticeSessionServiceActiveSessionTest {
     @Mock private StudySessionRepository sessionRepository;
     @Mock private SessionAnswerRepository answerRepository;
     @Mock private QuestionProgressRepository progressRepository;
+    @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private QuestionSelectionService questionSelectionService;
     @Mock private AnswerProcessingService answerProcessingService;
     @Mock private StreakService streakService;
@@ -54,7 +56,8 @@ class PracticeSessionServiceActiveSessionTest {
     void setUp() {
         service = new PracticeSessionService(
                 sessionRepository, answerRepository, progressRepository,
-                questionSelectionService, answerProcessingService, streakService,
+                domainProgressRepository, questionSelectionService,
+                answerProcessingService, streakService,
                 achievementService, strapiContentCache, outboxEventRepository,
                 new ObjectMapper()
         );

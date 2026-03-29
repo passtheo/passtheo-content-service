@@ -1,5 +1,6 @@
 package com.passtheo.content.dto.response;
 
+import jakarta.annotation.Nullable;
 import java.util.List;
 
 /**
@@ -9,7 +10,7 @@ public record QuestionDto(
     String strapiQuestionId,
     String questionText,
     String interactionType,
-    String difficulty,
+    @Nullable String difficulty,
     String imageUrl,
     String videoUrl,
     List<AnswerOptionDto> answerOptions,
