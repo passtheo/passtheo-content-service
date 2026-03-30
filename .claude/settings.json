@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew clean build:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew bootRun:*)",
+      "Bash(./gradlew bootJar:*)",
+      "Bash(./gradlew acceptanceTest:*)",
+      "Bash(./gradlew jacocoTestReport:*)",
+      "Bash(./gradlew checkstyleMain:*)",
+      "Bash(./gradlew dependencies:*)",
+      "Bash(./gradlew publishToMavenLocal:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh project:*)",
+      "Bash(ls:*)",
+      "Bash(find src:*)",
+      "Bash(docker compose:*)"
+    ],
+    "deny": [
+      "Bash(./gradlew flywayClean:*)"
+    ]
+  }
+}
