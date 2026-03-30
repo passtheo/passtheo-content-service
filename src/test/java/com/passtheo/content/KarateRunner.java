@@ -10,6 +10,7 @@ import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiProductDto;
 import com.passtheo.content.integration.strapi.dto.StrapiProductTypeDto;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
+import com.passtheo.content.integration.strapi.dto.StrapiRelationDto;
 import com.passtheo.content.integration.strapi.dto.StrapiTopicDto;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -119,10 +120,16 @@ class KarateRunner {
         when(strapiClient.getQuestionsByProduct(anyString(), anyString()))
                 .thenReturn(buildAllProductQuestions());
         when(strapiClient.getQuestion(anyString(), anyString()))
-                .thenAnswer(inv -> buildSingleQuestion(inv.getArgument(0), "verkeersborden"));
+                .thenAnswer(inv -> {
+                    String questionId = inv.getArgument(0);
+                    // If questionId is already a documentId (starts with "doc-"), use it as-is
+                    // Otherwise, assume it's an old-style ID and convert it
+                    String documentId = questionId.startsWith("doc-") ? questionId : "doc-" + questionId;
+                    return buildSingleQuestion(questionId, documentId, "verkeersborden");
+                });
         when(strapiClient.getExamConfig(anyString()))
-                .thenReturn(new StrapiExamConfigDto(50, 30, 44, null, null, true, false, false));
-        when(strapiClient.getAchievements())
+                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(strapiClient.getAchievements(anyString()))
                 .thenReturn(buildAchievements());
         when(strapiClient.getRoadSigns(anyString(), anyString(), any()))
                 .thenReturn(List.of());
@@ -133,45 +140,45 @@ class KarateRunner {
     // ─── Test Data Builders ───
 
     private List<StrapiCountryDto> buildCountries() {
-        return List.of(new StrapiCountryDto("Nederland", "NL", null, "nl", List.of("nl", "en"), true, 1));
+        return List.of(new StrapiCountryDto(1, "doc-nl", "Nederland", "NL", null, "nl", List.of("nl", "en"), true, 1));
     }
 
     private List<StrapiProductTypeDto> buildProductTypes() {
         return List.of(new StrapiProductTypeDto(
-                "CBR Rijbewijzen", "cbr", "Dutch driving authority",
+                1, null, "CBR Rijbewijzen", "cbr", "Dutch driving authority",
                 null, null, "CBR", "https://cbr.nl", true, 1, 3));
     }
 
     private List<StrapiProductDto> buildProducts() {
         return List.of(new StrapiProductDto(
-                "Auto B", "auto-b", "B", "Auto rijbewijs theorie",
+                1, null, "Auto B", "auto-b", "B", "Auto rijbewijs theorie",
                 null, null, true, false, 1,
-                new StrapiExamConfigDto(50, 30, 44, null, null, true, false, false),
+                new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false),
                 8, 500));
     }
 
     private List<StrapiDomainDto> buildDomains() {
         return List.of(
-                new StrapiDomainDto("Verkeersborden", "verkeersborden", "verkeersborden",
+                new StrapiDomainDto(1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
                         "Kennis van verkeersborden", null, "#E63946", 50, true, true, 1),
-                new StrapiDomainDto("Snelheid", "snelheid", "snelheid",
+                new StrapiDomainDto(2, null, "Snelheid", "snelheid", "snelheid",
                         "Snelheidsregels", null, "#457B9D", 30, true, false, 2),
-                new StrapiDomainDto("Voorrang", "voorrang", "voorrang",
+                new StrapiDomainDto(3, null, "Voorrang", "voorrang", "voorrang",
                         "Voorrangsregels", null, "#1D3557", 40, true, false, 3),
-                new StrapiDomainDto("Rijbaan", "rijbaan", "rijbaan",
+                new StrapiDomainDto(4, null, "Rijbaan", "rijbaan", "rijbaan",
                         "Rijbaangebruik", null, "#2A9D8F", 35, true, false, 4),
-                new StrapiDomainDto("Gevaarherkenning", "gevaarherkenning", "gevaarherkenning",
+                new StrapiDomainDto(5, null, "Gevaarherkenning", "gevaarherkenning", "gevaarherkenning",
                         "Gevaarherkenning", null, "#F4A261", 30, true, false, 5),
-                new StrapiDomainDto("Milieu", "milieu", "milieu",
+                new StrapiDomainDto(6, null, "Milieu", "milieu", "milieu",
                         "Milieu en economisch rijden", null, "#2ECC71", 20, true, false, 6)
         );
     }
 
     private List<StrapiTopicDto> buildTopics() {
         return List.of(
-                new StrapiTopicDto("Gebodsborden", "gebodsborden", "gebodsborden",
+                new StrapiTopicDto(1, null, "Gebodsborden", "gebodsborden", "gebodsborden",
                         "Gebodsborden herkennen", "medium", 15, true, 1),
-                new StrapiTopicDto("Verbodsborden", "verbodsborden", "verbodsborden",
+                new StrapiTopicDto(2, null, "Verbodsborden", "verbodsborden", "verbodsborden",
                         "Verbodsborden herkennen", "hard", 15, true, 2)
         );
     }
@@ -189,45 +196,46 @@ class KarateRunner {
 
     private List<StrapiQuestionDto> buildQuestions(String domainCode, int count) {
         return java.util.stream.IntStream.rangeClosed(1, count)
-                .mapToObj(i -> buildSingleQuestion("q-" + domainCode + "-" + i, domainCode))
+                .mapToObj(i -> buildSingleQuestion("q-" + domainCode + "-" + i, "doc-" + domainCode + "-" + i, domainCode))
                 .toList();
     }
 
-    private StrapiQuestionDto buildSingleQuestion(String id, String domainCode) {
+    private StrapiQuestionDto buildSingleQuestion(String id, String documentId, String domainCode) {
         return new StrapiQuestionDto(
-                id,
-                "Wat betekent dit verkeersbord? (vraag " + id + ")",
+                1,
+                documentId,
+                "Wat betekent dit verkeersbord? (vraag " + documentId + ")",
                 "multiple_choice",
                 "medium",
-                null, null, null, null, 1,
+                null, null, null, null, 1, true, false, null, null,
                 List.of(
-                        new StrapiQuestionDto.AnswerOptionDto("opt-a", "Verboden in te rijden", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("opt-b", "Gevaarlijke bocht", null, false, 2),
-                        new StrapiQuestionDto.AnswerOptionDto("opt-c", "Doorrijden verboden", null, false, 3),
-                        new StrapiQuestionDto.AnswerOptionDto("opt-d", "Pas op voor tegenliggers", null, false, 4)
+                        new StrapiQuestionDto.AnswerOptionDto(1, "Verboden in te rijden", null, true, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "Gevaarlijke bocht", null, false, 2),
+                        new StrapiQuestionDto.AnswerOptionDto(3, "Doorrijden verboden", null, false, 3),
+                        new StrapiQuestionDto.AnswerOptionDto(4, "Pas op voor tegenliggers", null, false, 4)
                 ),
                 new StrapiQuestionDto.ExplanationDto(
                         "Een verbodsbord met rode rand en kruis betekent verboden in te rijden.",
                         null, "Kijk altijd naar de rand en symbolen op het bord.",
                         null, "RVV 1990 Art. 62"),
-                null, null,
-                domainCode, "gebodsborden"
+                null, null, null, null,
+                new StrapiRelationDto(0, null, domainCode, null),
+                new StrapiRelationDto(0, null, "gebodsborden", null),
+                null
         );
     }
 
     private List<StrapiAchievementDefDto> buildAchievements() {
-        return List.of(
-                new StrapiAchievementDefDto("Eerste Stap", "first_question",
+        return java.util.Arrays.asList(
+                new StrapiAchievementDefDto(1, null, "Eerste Stap", "first_question",
                         "Beantwoord je eerste vraag", "\uD83C\uDFAF", "\uD83D\uDD12",
-                        "questions_answered", 1, 10, true, 1),
-                new StrapiAchievementDefDto("Beginnersluk", "ten_questions",
+                        "questions_answered", 1, 10, true, 1, "auto-b"),
+                new StrapiAchievementDefDto(2, null, "Beginnersluk", "ten_questions",
                         "Beantwoord 10 vragen", "\u2B50", "\uD83D\uDD12",
-                        "questions_answered", 10, 50, true, 2),
-                new StrapiAchievementDefDto("Weekkampioen", "7_day_streak",
+                        "questions_answered", 10, 50, true, 2, null),
+                new StrapiAchievementDefDto(3, null, "Weekkampioen", "7_day_streak",
                         "7 dagen op rij gestudeerd", "\uD83D\uDD25", "\uD83D\uDD12",
-                        "study_days_streak", 7, 100, true, 3)
+                        "study_days_streak", 7, 100, true, 3, null)
         );
     }
 }
-
-

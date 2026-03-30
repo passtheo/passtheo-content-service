@@ -32,39 +32,45 @@ class AnswerProcessingServiceTest {
     @Test
     void gradeAnswer_multipleChoice_correctOption_returnsTrue() {
         StrapiQuestionDto question = buildQuestion("multiple_choice",
-                List.of(new StrapiQuestionDto.AnswerOptionDto("a1", "Correct", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("a2", "Wrong", null, false, 2)),
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "Correct", null, true, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "Wrong", null, false, 2)),
                 null, null);
-        assertThat(service.gradeAnswer(question, Map.of("selectedOptionId", "a1"))).isTrue();
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionId", "1"))).isTrue();
     }
 
     @Test
     void gradeAnswer_multipleChoice_wrongOption_returnsFalse() {
         StrapiQuestionDto question = buildQuestion("multiple_choice",
-                List.of(new StrapiQuestionDto.AnswerOptionDto("a1", "Correct", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("a2", "Wrong", null, false, 2)),
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "Correct", null, true, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "Wrong", null, false, 2)),
                 null, null);
-        assertThat(service.gradeAnswer(question, Map.of("selectedOptionId", "a2"))).isFalse();
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionId", "2"))).isFalse();
     }
 
     // ─── YES/NO ───
 
     @Test
-    void gradeAnswer_yesNo_correctYes_returnsTrue() {
-        StrapiQuestionDto question = buildQuestion("yes_no",
-                List.of(new StrapiQuestionDto.AnswerOptionDto("a1", "Ja", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("a2", "Nee", null, false, 2)),
-                null, null);
+    void gradeAnswer_yesNo_correctBoolean_true_userAnswersTrue_returnsTrue() {
+        StrapiQuestionDto question = buildYesNoQuestion(true);
         assertThat(service.gradeAnswer(question, Map.of("answer", true))).isTrue();
     }
 
     @Test
-    void gradeAnswer_yesNo_wrongAnswer_returnsFalse() {
-        StrapiQuestionDto question = buildQuestion("yes_no",
-                List.of(new StrapiQuestionDto.AnswerOptionDto("a1", "Ja", null, true, 1),
-                        new StrapiQuestionDto.AnswerOptionDto("a2", "Nee", null, false, 2)),
-                null, null);
+    void gradeAnswer_yesNo_correctBoolean_true_userAnswersFalse_returnsFalse() {
+        StrapiQuestionDto question = buildYesNoQuestion(true);
         assertThat(service.gradeAnswer(question, Map.of("answer", false))).isFalse();
+    }
+
+    @Test
+    void gradeAnswer_yesNo_correctBoolean_false_userAnswersFalse_returnsTrue() {
+        StrapiQuestionDto question = buildYesNoQuestion(false);
+        assertThat(service.gradeAnswer(question, Map.of("answer", false))).isTrue();
+    }
+
+    @Test
+    void gradeAnswer_yesNo_correctBoolean_null_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("yes_no", null, null, null);
+        assertThat(service.gradeAnswer(question, Map.of("answer", true))).isFalse();
     }
 
     // ─── FILL IN NUMBER ───
@@ -92,19 +98,19 @@ class AnswerProcessingServiceTest {
     @Test
     void gradeAnswer_tapOnImage_correctRegion_returnsTrue() {
         StrapiQuestionDto question = buildQuestion("tap_on_image", null,
-                List.of(new StrapiQuestionDto.ImageRegionDto("r1", "Region A", 10, 20, 30, 40, true, 1),
-                        new StrapiQuestionDto.ImageRegionDto("r2", "Region B", 50, 60, 30, 40, false, 2)),
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Region A", 10, 20, 30, 40, true, 1),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Region B", 50, 60, 30, 40, false, 2)),
                 null);
-        assertThat(service.gradeAnswer(question, Map.of("tappedRegionId", "r1"))).isTrue();
+        assertThat(service.gradeAnswer(question, Map.of("tappedRegionId", "1"))).isTrue();
     }
 
     @Test
     void gradeAnswer_tapOnImage_wrongRegion_returnsFalse() {
         StrapiQuestionDto question = buildQuestion("tap_on_image", null,
-                List.of(new StrapiQuestionDto.ImageRegionDto("r1", "Region A", 10, 20, 30, 40, true, 1),
-                        new StrapiQuestionDto.ImageRegionDto("r2", "Region B", 50, 60, 30, 40, false, 2)),
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Region A", 10, 20, 30, 40, true, 1),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Region B", 50, 60, 30, 40, false, 2)),
                 null);
-        assertThat(service.gradeAnswer(question, Map.of("tappedRegionId", "r2"))).isFalse();
+        assertThat(service.gradeAnswer(question, Map.of("tappedRegionId", "2"))).isFalse();
     }
 
     // ─── DRAG CHECKMARK ───
@@ -112,18 +118,18 @@ class AnswerProcessingServiceTest {
     @Test
     void gradeAnswer_dragCheckmark_allCorrectTargets_returnsTrue() {
         StrapiQuestionDto question = buildQuestion("drag_checkmark", null, null,
-                List.of(new StrapiQuestionDto.DragTargetDto("t1", "Target 1", null, true, 1, null),
-                        new StrapiQuestionDto.DragTargetDto("t2", "Target 2", null, false, 2, null),
-                        new StrapiQuestionDto.DragTargetDto("t3", "Target 3", null, true, 3, null)));
-        assertThat(service.gradeAnswer(question, Map.of("selectedTargetIds", List.of("t1", "t3")))).isTrue();
+                List.of(new StrapiQuestionDto.DragTargetDto(1, "Target 1", null, true, 1, null),
+                        new StrapiQuestionDto.DragTargetDto(2, "Target 2", null, false, 2, null),
+                        new StrapiQuestionDto.DragTargetDto(3, "Target 3", null, true, 3, null)));
+        assertThat(service.gradeAnswer(question, Map.of("selectedTargetIds", List.of("1", "3")))).isTrue();
     }
 
     @Test
     void gradeAnswer_dragCheckmark_missingTarget_returnsFalse() {
         StrapiQuestionDto question = buildQuestion("drag_checkmark", null, null,
-                List.of(new StrapiQuestionDto.DragTargetDto("t1", "Target 1", null, true, 1, null),
-                        new StrapiQuestionDto.DragTargetDto("t3", "Target 3", null, true, 3, null)));
-        assertThat(service.gradeAnswer(question, Map.of("selectedTargetIds", List.of("t1")))).isFalse();
+                List.of(new StrapiQuestionDto.DragTargetDto(1, "Target 1", null, true, 1, null),
+                        new StrapiQuestionDto.DragTargetDto(3, "Target 3", null, true, 3, null)));
+        assertThat(service.gradeAnswer(question, Map.of("selectedTargetIds", List.of("1")))).isFalse();
     }
 
     // ─── DRAG NUMBERS ───
@@ -131,17 +137,17 @@ class AnswerProcessingServiceTest {
     @Test
     void gradeAnswer_dragNumbers_correctOrder_returnsTrue() {
         StrapiQuestionDto question = buildQuestion("drag_numbers", null, null,
-                List.of(new StrapiQuestionDto.DragTargetDto("t1", "Pos 1", "1", false, 1, null),
-                        new StrapiQuestionDto.DragTargetDto("t2", "Pos 2", "2", false, 2, null)));
-        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("t1", "1", "t2", "2")))).isTrue();
+                List.of(new StrapiQuestionDto.DragTargetDto(1, "Pos 1", "1", false, 1, null),
+                        new StrapiQuestionDto.DragTargetDto(2, "Pos 2", "2", false, 2, null)));
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "1", "2", "2")))).isTrue();
     }
 
     @Test
     void gradeAnswer_dragNumbers_wrongOrder_returnsFalse() {
         StrapiQuestionDto question = buildQuestion("drag_numbers", null, null,
-                List.of(new StrapiQuestionDto.DragTargetDto("t1", "Pos 1", "1", false, 1, null),
-                        new StrapiQuestionDto.DragTargetDto("t2", "Pos 2", "2", false, 2, null)));
-        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("t1", "2", "t2", "1")))).isFalse();
+                List.of(new StrapiQuestionDto.DragTargetDto(1, "Pos 1", "1", false, 1, null),
+                        new StrapiQuestionDto.DragTargetDto(2, "Pos 2", "2", false, 2, null)));
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "2", "2", "1")))).isFalse();
     }
 
     // ─── MASTERY TRANSITIONS ───
@@ -252,14 +258,20 @@ class AnswerProcessingServiceTest {
                                             List<StrapiQuestionDto.AnswerOptionDto> answerOptions,
                                             List<StrapiQuestionDto.ImageRegionDto> imageRegions,
                                             List<StrapiQuestionDto.DragTargetDto> dragTargets) {
-        return new StrapiQuestionDto("q-001", "Test question", interactionType, "medium",
-                null, null, null, null, 1, answerOptions, null, imageRegions, dragTargets,
-                "domain1", "topic1");
+        return new StrapiQuestionDto(1, "doc-001", "Test question", interactionType, "medium",
+                null, null, null, null, 1, false, false, null, null,
+                answerOptions, null, imageRegions, dragTargets, null, null, null, null, null);
+    }
+
+    private StrapiQuestionDto buildYesNoQuestion(Boolean correctBoolean) {
+        return new StrapiQuestionDto(1, "doc-001", "Test yes/no question", "yes_no", "medium",
+                null, null, null, correctBoolean, 1, false, false, null, null,
+                null, null, null, null, null, null, null, null, null);
     }
 
     private StrapiQuestionDto buildFillInNumberQuestion(int correctNumber, int tolerance) {
-        return new StrapiQuestionDto("q-001", "What number?", "fill_in_number", "medium",
-                null, null, correctNumber, tolerance, 1, null, null, null, null,
-                "domain1", "topic1");
+        return new StrapiQuestionDto(1, "doc-001", "What number?", "fill_in_number", "medium",
+                null, correctNumber, tolerance, null, 1, false, false, null, null,
+                null, null, null, null, null, null, null, null, null);
     }
 }

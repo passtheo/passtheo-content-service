@@ -63,6 +63,9 @@ public class OutboxEvent {
     @Column(name = "error_message")
     private String errorMessage;
 
+    @Column(name = "partition_key", length = 100)
+    private String partitionKey;
+
     public OutboxEvent() {
         this.status = OutboxStatus.PENDING;
         this.retryCount = 0;
@@ -117,4 +120,6 @@ public class OutboxEvent {
     public void setFailedAt(Instant failedAt) { this.failedAt = failedAt; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+    public String getPartitionKey() { return partitionKey; }
+    public void setPartitionKey(String partitionKey) { this.partitionKey = partitionKey; }
 }

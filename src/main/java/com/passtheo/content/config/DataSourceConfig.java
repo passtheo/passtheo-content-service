@@ -1,6 +1,7 @@
 package com.passtheo.content.config;
 
 import com.passtheo.shared.core.context.TenantContext;
+import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,6 +40,7 @@ public class DataSourceConfig {
         config.setPassword(password);
         config.setMaximumPoolSize(10);
         config.setMinimumIdle(2);
+        config.setInitializationFailTimeout(-1);
         return new HikariDataSource(config);
     }
 
@@ -50,7 +52,16 @@ public class DataSourceConfig {
      */
     @Bean
     @Primary
-    public DataSource dataSource(DataSource actualDataSource) {
+    public DataSource dataSource(
+            DataSource actualDataSource,
+            @Value("${spring.flyway.locations:classpath:db/migration}") String locations,
+            @Value("${spring.flyway.baseline-on-migrate:true}") boolean baselineOnMigrate) {
+        Flyway.configure()
+                .dataSource(actualDataSource)
+                .locations(locations)
+                .baselineOnMigrate(baselineOnMigrate)
+                .load()
+                .migrate();
         return new LazyConnectionDataSourceProxy(new TenantAwareDs(actualDataSource));
     }
 

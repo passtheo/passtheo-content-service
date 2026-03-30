@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.integration.strapi.dto.StrapiAchievementDefDto;
+import com.passtheo.content.integration.strapi.dto.StrapiAppConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiCountryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
@@ -64,7 +65,7 @@ public class StrapiContentCache {
      */
     public List<StrapiCountryDto> getCountries(@Nonnull String locale) {
         return getCachedOrFetch("countries:" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getCountries(locale));
     }
 
@@ -77,7 +78,7 @@ public class StrapiContentCache {
      */
     public List<StrapiProductTypeDto> getProductTypes(@Nonnull String countryCode, @Nonnull String locale) {
         return getCachedOrFetch("productTypes:" + countryCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getProductTypes(countryCode, locale));
     }
 
@@ -90,7 +91,7 @@ public class StrapiContentCache {
      */
     public List<StrapiProductDto> getProducts(@Nonnull String productTypeCode, @Nonnull String locale) {
         return getCachedOrFetch("products:" + productTypeCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getProducts(productTypeCode, locale));
     }
 
@@ -103,7 +104,7 @@ public class StrapiContentCache {
      */
     public List<StrapiDomainDto> getDomains(@Nonnull String productCode, @Nonnull String locale) {
         return getCachedOrFetch("domains:" + productCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getDomains(productCode, locale));
     }
 
@@ -116,8 +117,21 @@ public class StrapiContentCache {
      */
     public List<StrapiTopicDto> getTopics(@Nonnull String domainCode, @Nonnull String locale) {
         return getCachedOrFetch("topics:" + domainCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getTopics(domainCode, locale));
+    }
+
+    /**
+     * Gets questions for a topic with caching.
+     *
+     * @param topicCode the topic code
+     * @param locale    the content locale
+     * @return list of questions
+     */
+    public List<StrapiQuestionDto> getQuestionsByTopic(@Nonnull String topicCode, @Nonnull String locale) {
+        return getCachedOrFetch("questions:topic:" + topicCode + ":" + locale,
+                new TypeReference<>() { },
+                () -> strapiClient.getQuestionsByTopic(topicCode, locale));
     }
 
     /**
@@ -129,7 +143,7 @@ public class StrapiContentCache {
      */
     public List<StrapiQuestionDto> getQuestionsByDomain(@Nonnull String domainCode, @Nonnull String locale) {
         return getCachedOrFetch("questions:domain:" + domainCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getQuestionsByDomain(domainCode, locale));
     }
 
@@ -142,7 +156,7 @@ public class StrapiContentCache {
      */
     public List<StrapiQuestionDto> getQuestionsByProduct(@Nonnull String productCode, @Nonnull String locale) {
         return getCachedOrFetch("questions:product:" + productCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getQuestionsByProduct(productCode, locale));
     }
 
@@ -151,11 +165,11 @@ public class StrapiContentCache {
      *
      * @param productCode the product code
      * @param locale      the content locale
-     * @return list of question IDs
+     * @return list of question documentIds (locale-independent)
      */
     public List<String> getQuestionIds(@Nonnull String productCode, @Nonnull String locale) {
         List<StrapiQuestionDto> questions = getQuestionsByProduct(productCode, locale);
-        return questions.stream().map(StrapiQuestionDto::id).toList();
+        return questions.stream().map(StrapiQuestionDto::documentId).toList();
     }
 
     /**
@@ -200,6 +214,34 @@ public class StrapiContentCache {
     }
 
     /**
+     * Gets the app config with caching.
+     *
+     * @return the app config, or null if unavailable
+     */
+    public StrapiAppConfigDto getAppConfig() {
+        String cacheKey = CACHE_PREFIX + "appConfig";
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            LOG.debug("Cache HIT: key={}", cacheKey);
+            try {
+                return objectMapper.readValue(cached, StrapiAppConfigDto.class);
+            } catch (JsonProcessingException e) {
+                LOG.warn("Cache HIT but deserialize failed: key={}, error={}", cacheKey, e.getMessage());
+            }
+        }
+
+        LOG.debug("Cache MISS: key={}", cacheKey);
+        StrapiAppConfigDto config = strapiClient.getAppConfig();
+        if (config != null) {
+            cacheValue(cacheKey, config, cacheTtl);
+            LOG.debug("Cache POPULATED: key={}", cacheKey);
+        } else {
+            LOG.warn("Strapi returned null app config");
+        }
+        return config;
+    }
+
+    /**
      * Gets exam config for a product with caching.
      *
      * @param productCode the product code
@@ -224,14 +266,15 @@ public class StrapiContentCache {
     }
 
     /**
-     * Gets achievement definitions with caching.
+     * Gets achievement definitions with caching, filtered by product (includes platform-wide).
      *
-     * @return list of achievement definitions
+     * @param productCode the product code
+     * @return list of achievement definitions for the product and platform-wide
      */
-    public List<StrapiAchievementDefDto> getAchievements() {
-        return getCachedOrFetch("achievements",
-                new TypeReference<>() {},
-                strapiClient::getAchievements);
+    public List<StrapiAchievementDefDto> getAchievements(@Nonnull String productCode) {
+        return getCachedOrFetch("achievements:" + productCode,
+                new TypeReference<>() { },
+                () -> strapiClient.getAchievements(productCode));
     }
 
     /**
@@ -244,9 +287,9 @@ public class StrapiContentCache {
      */
     public List<StrapiRoadSignDto> getRoadSigns(@Nonnull String countryCode, @Nonnull String locale,
                                                  String category) {
-        String key = "roadSigns:" + countryCode + ":" + locale + (category != null ? ":" + category : "");
-        return getCachedOrFetch(key,
-                new TypeReference<>() {},
+        return getCachedOrFetch("roadSigns:" + countryCode + ":" + locale
+                + (category != null ? ":" + category : ""),
+                new TypeReference<>() { },
                 () -> strapiClient.getRoadSigns(countryCode, locale, category));
     }
 
@@ -259,7 +302,7 @@ public class StrapiContentCache {
      */
     public List<StrapiLessonDto> getLessons(@Nonnull String topicCode, @Nonnull String locale) {
         return getCachedOrFetch("lessons:" + topicCode + ":" + locale,
-                new TypeReference<>() {},
+                new TypeReference<>() { },
                 () -> strapiClient.getLessons(topicCode, locale));
     }
 
@@ -296,15 +339,18 @@ public class StrapiContentCache {
 
         try {
             T result = fetcher.get();
-            if (result != null) {
-                cacheValue(cacheKey, result);
+            if (result instanceof List<?> list && list.isEmpty()) {
+                LOG.warn("Strapi returned empty list for key={} — skipping cache", cacheKey);
+            } else if (result != null) {
+                cacheValue(cacheKey, result, cacheTtl);
                 LOG.debug("Cache POPULATED: key={}", cacheKey);
             } else {
                 LOG.warn("Strapi returned null for key={}", cacheKey);
             }
             return result;
         } catch (Exception e) {
-            LOG.error("Strapi fetch FAILED: key={}, error={} — serving stale cache if available", cacheKey, e.getMessage(), e);
+            LOG.error("Strapi fetch FAILED: key={}, error={} — serving stale cache if available",
+                    cacheKey, e.getMessage(), e);
             if (cached != null) {
                 LOG.warn("Serving STALE cache: key={}", cacheKey);
                 try {
@@ -318,12 +364,19 @@ public class StrapiContentCache {
     }
 
     /**
-     * Caches a value in Redis with TTL.
+     * Caches a value in Redis with the default TTL.
      */
     private void cacheValue(String key, Object value) {
+        cacheValue(key, value, cacheTtl);
+    }
+
+    /**
+     * Caches a value in Redis with an explicit TTL.
+     */
+    private void cacheValue(String key, Object value, Duration ttl) {
         try {
             String json = objectMapper.writeValueAsString(value);
-            redisTemplate.opsForValue().set(key, json, cacheTtl);
+            redisTemplate.opsForValue().set(key, json, ttl);
         } catch (JsonProcessingException e) {
             LOG.warn("Failed to serialize cache value for key {}: {}", key, e.getMessage());
         }

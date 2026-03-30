@@ -2,14 +2,18 @@ package com.passtheo.content.integration.strapi.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.util.List;
+
 /**
  * Strapi Lesson content type attributes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiLessonDto(
+    int id,
+    String documentId,
     String title,
     String slug,
-    String content,
+    List<SectionDto> sections,
     String summary,
     String coverImage,
     String videoUrl,
@@ -17,4 +21,18 @@ public record StrapiLessonDto(
     boolean isActive,
     boolean isPremium,
     int sortOrder
-) {}
+) {
+
+    /**
+     * A single structured section within a lesson.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record SectionDto(
+        String heading,
+        String body,
+        String tip,
+        String keyRule,
+        String relatedRoadSignCode,
+        int sortOrder
+    ) {}
+}

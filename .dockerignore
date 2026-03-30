@@ -1,6 +1,5 @@
 .git
 .gradle
-build
 bin
 logs
 .idea
@@ -8,3 +7,4 @@ logs
 *.iws
 *.ipr
 plan
+!build/libs/*.jar

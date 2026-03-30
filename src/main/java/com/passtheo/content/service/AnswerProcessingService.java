@@ -100,16 +100,13 @@ public class AnswerProcessingService {
                 String correctId = question.answerOptions() != null
                         ? question.answerOptions().stream()
                         .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
-                        .map(StrapiQuestionDto.AnswerOptionDto::id)
+                        .map(o -> String.valueOf(o.id()))
                         .findFirst().orElse(null)
                         : null;
                 yield Map.of("selectedOptionId", Objects.requireNonNullElse(correctId, ""));
             }
             case "yes_no" -> {
-                boolean correctAnswer = question.answerOptions() != null
-                        && question.answerOptions().stream()
-                        .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
-                        .anyMatch(o -> "yes".equalsIgnoreCase(o.text()) || "ja".equalsIgnoreCase(o.text()));
+                boolean correctAnswer = Boolean.TRUE.equals(question.correctBoolean());
                 yield Map.of("answer", correctAnswer);
             }
             case "fill_in_number" -> Map.of("number",
@@ -118,7 +115,7 @@ public class AnswerProcessingService {
                 String correctRegionId = question.imageRegions() != null
                         ? question.imageRegions().stream()
                         .filter(StrapiQuestionDto.ImageRegionDto::isCorrect)
-                        .map(StrapiQuestionDto.ImageRegionDto::id)
+                        .map(r -> String.valueOf(r.id()))
                         .findFirst().orElse("")
                         : "";
                 yield Map.of("tappedRegionId", correctRegionId);
@@ -127,7 +124,7 @@ public class AnswerProcessingService {
                 List<String> correctIds = question.dragTargets() != null
                         ? question.dragTargets().stream()
                         .filter(StrapiQuestionDto.DragTargetDto::isCorrect)
-                        .map(StrapiQuestionDto.DragTargetDto::id)
+                        .map(dt -> String.valueOf(dt.id()))
                         .toList()
                         : List.of();
                 yield Map.of("selectedTargetIds", correctIds);
@@ -137,7 +134,7 @@ public class AnswerProcessingService {
                 if (question.dragTargets() != null) {
                     question.dragTargets().stream()
                             .filter(dt -> dt.correctValue() != null)
-                            .forEach(dt -> placements.put(dt.id(), dt.correctValue()));
+                            .forEach(dt -> placements.put(String.valueOf(dt.id()), dt.correctValue()));
                 }
                 yield Map.of("placements", (Object) placements);
             }
@@ -151,22 +148,21 @@ public class AnswerProcessingService {
             return false;
         }
         return question.answerOptions().stream()
-                .filter(o -> o.id().equals(selectedOptionId))
+                .filter(o -> String.valueOf(o.id()).equals(selectedOptionId))
                 .anyMatch(StrapiQuestionDto.AnswerOptionDto::isCorrect);
     }
 
     private boolean gradeYesNo(StrapiQuestionDto question, Map<String, Object> answer) {
         Object userAnswer = answer.get("answer");
-        if (userAnswer == null || question.answerOptions() == null) {
+        if (userAnswer == null) {
+            return false;
+        }
+        if (question.correctBoolean() == null) {
+            LOG.error("yes_no question {} has null correctBoolean — rejecting as invalid", question.id());
             return false;
         }
         boolean userSaidYes = Boolean.TRUE.equals(userAnswer);
-        return question.answerOptions().stream()
-                .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
-                .anyMatch(o -> {
-                    boolean isYes = "yes".equalsIgnoreCase(o.text()) || "ja".equalsIgnoreCase(o.text());
-                    return userSaidYes == isYes;
-                });
+        return userSaidYes == question.correctBoolean();
     }
 
     private boolean gradeFillInNumber(StrapiQuestionDto question, Map<String, Object> answer) {
@@ -185,7 +181,7 @@ public class AnswerProcessingService {
             return false;
         }
         return question.imageRegions().stream()
-                .filter(r -> r.id().equals(tappedRegionId))
+                .filter(r -> String.valueOf(r.id()).equals(tappedRegionId))
                 .anyMatch(StrapiQuestionDto.ImageRegionDto::isCorrect);
     }
 
@@ -198,7 +194,7 @@ public class AnswerProcessingService {
         List<String> selectedIds = (List<String>) selectedObj;
         List<String> correctIds = question.dragTargets().stream()
                 .filter(StrapiQuestionDto.DragTargetDto::isCorrect)
-                .map(StrapiQuestionDto.DragTargetDto::id)
+                .map(dt -> String.valueOf(dt.id()))
                 .toList();
         return selectedIds.size() == correctIds.size()
                 && selectedIds.containsAll(correctIds);
@@ -215,7 +211,7 @@ public class AnswerProcessingService {
             if (target.correctValue() == null) {
                 continue;
             }
-            String placed = placements.get(target.id());
+            String placed = placements.get(String.valueOf(target.id()));
             if (!target.correctValue().equals(placed)) {
                 return false;
             }

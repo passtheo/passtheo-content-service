@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiDomainDto(
+    int id,
+    String documentId,
     String name,
     String code,
     String slug,

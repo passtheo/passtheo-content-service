@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StrapiAchievementDefDto(
+    int id,
+    String documentId,
     String name,
     String code,
     String description,
@@ -16,5 +18,6 @@ public record StrapiAchievementDefDto(
     int triggerValue,
     int xpReward,
     boolean isActive,
-    int sortOrder
+    int sortOrder,
+    String productCode
 ) {}

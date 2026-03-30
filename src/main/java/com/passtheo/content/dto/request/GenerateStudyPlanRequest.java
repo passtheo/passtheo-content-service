@@ -9,16 +9,16 @@ import java.time.LocalDate;
  *
  * @param productCode         the product code
  * @param examDate            target exam date (nullable = 30-day default plan)
- * @param dailyQuestionTarget daily question target (default 20)
+ * @param dailyQuestionTarget daily question target; null = auto-calculate from remaining questions ÷ days
  */
 public record GenerateStudyPlanRequest(
     @NotBlank String productCode,
     LocalDate examDate,
-    int dailyQuestionTarget
+    Integer dailyQuestionTarget
 ) {
     public GenerateStudyPlanRequest {
-        if (dailyQuestionTarget <= 0) {
-            dailyQuestionTarget = 20;
+        if (dailyQuestionTarget != null && dailyQuestionTarget <= 0) {
+            dailyQuestionTarget = null;
         }
     }
 }

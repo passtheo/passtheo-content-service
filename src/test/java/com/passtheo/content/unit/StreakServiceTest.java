@@ -2,6 +2,8 @@ package com.passtheo.content.unit;
 
 import com.passtheo.content.domain.entity.Streak;
 import com.passtheo.content.domain.valueobject.StreakResult;
+import com.passtheo.content.repository.OutboxEventRepository;
+import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.service.StreakService;
 import com.passtheo.shared.core.context.TenantContext;
@@ -12,8 +14,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +32,8 @@ import static org.mockito.Mockito.when;
 class StreakServiceTest {
 
     @Mock private StreakRepository streakRepository;
+    @Mock private SessionAnswerRepository sessionAnswerRepository;
+    @Mock private OutboxEventRepository outboxEventRepository;
 
     private StreakService service;
 
@@ -37,7 +43,7 @@ class StreakServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new StreakService(streakRepository);
+        service = new StreakService(streakRepository, sessionAnswerRepository, outboxEventRepository);
         TenantContext.set(TENANT_ID);
     }
 
@@ -166,6 +172,59 @@ class StreakServiceTest {
         assertThat(result.longestStreak()).isEqualTo(0);
         assertThat(result.studiedToday()).isFalse();
         assertThat(result.freezeSlotsAvailable()).isEqualTo(0);
+    }
+
+    // --- computeLastSevenDays ---
+
+    @Test
+    void computeLastSevenDays_threeDaysStudied_correctBooleanArray() {
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        List<java.sql.Date> studyDates = List.of(
+                java.sql.Date.valueOf(today),
+                java.sql.Date.valueOf(today.minusDays(1)),
+                java.sql.Date.valueOf(today.minusDays(4))
+        );
+        when(sessionAnswerRepository.findStudyDatesBetween(any(), any(), any(Instant.class), any(Instant.class)))
+                .thenReturn(studyDates);
+
+        List<Boolean> result = service.computeLastSevenDays(USER_ID, PRODUCT_CODE);
+
+        assertThat(result).hasSize(7);
+        // index 0 = 6 days ago, index 6 = today
+        assertThat(result.get(6)).isTrue();  // today
+        assertThat(result.get(5)).isTrue();  // yesterday
+        assertThat(result.get(2)).isTrue();  // 4 days ago
+        assertThat(result.get(0)).isFalse(); // 6 days ago
+        assertThat(result.get(1)).isFalse(); // 5 days ago
+        assertThat(result.get(3)).isFalse(); // 3 days ago
+        assertThat(result.get(4)).isFalse(); // 2 days ago
+    }
+
+    @Test
+    void computeLastSevenDays_allDaysStudied_allTrue() {
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        List<java.sql.Date> studyDates = new java.util.ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            studyDates.add(java.sql.Date.valueOf(today.minusDays(i)));
+        }
+        when(sessionAnswerRepository.findStudyDatesBetween(any(), any(), any(Instant.class), any(Instant.class)))
+                .thenReturn(studyDates);
+
+        List<Boolean> result = service.computeLastSevenDays(USER_ID, PRODUCT_CODE);
+
+        assertThat(result).hasSize(7);
+        assertThat(result).containsOnly(true);
+    }
+
+    @Test
+    void computeLastSevenDays_noDaysStudied_allFalse() {
+        when(sessionAnswerRepository.findStudyDatesBetween(any(), any(), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of());
+
+        List<Boolean> result = service.computeLastSevenDays(USER_ID, PRODUCT_CODE);
+
+        assertThat(result).hasSize(7);
+        assertThat(result).containsOnly(false);
     }
 
     private Streak createStreak(int currentStreak, LocalDate lastStudyDate) {
