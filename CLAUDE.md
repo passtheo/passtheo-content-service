@@ -18,7 +18,9 @@
 |------|---------|
 | Build | `./gradlew clean build` |
 | Test | `./gradlew test` |
+| Coverage | `./gradlew jacocoTestReport` (target: 80%) |
 | Run | `./gradlew bootRun` |
+| Acceptance | `./gradlew acceptanceTest` |
 
 ## Source Layout
 

@@ -10,7 +10,6 @@
       "Bash(./gradlew jacocoTestReport:*)",
       "Bash(./gradlew checkstyleMain:*)",
       "Bash(./gradlew dependencies:*)",
-      "Bash(./gradlew publishToMavenLocal:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
