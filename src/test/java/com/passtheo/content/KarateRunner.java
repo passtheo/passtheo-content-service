@@ -1,5 +1,7 @@
 package com.passtheo.content;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.intuit.karate.junit5.Karate;
 import com.passtheo.content.config.TestSchedulingConfig;
 import com.passtheo.content.integration.strapi.StrapiClient;
@@ -13,7 +15,9 @@ import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.integration.strapi.dto.StrapiRelationDto;
 import com.passtheo.content.integration.strapi.dto.StrapiTopicDto;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,6 +26,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import javax.sql.DataSource;
@@ -41,7 +47,28 @@ import static org.mockito.Mockito.when;
 @ActiveProfiles("acceptance")
 @Import({TestSchedulingConfig.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("acceptance")
 class KarateRunner {
+
+    private static final WireMockServer USER_SERVICE_MOCK = new WireMockServer(
+            WireMockConfiguration.wireMockConfig()
+                    .dynamicPort()
+                    .usingFilesUnderDirectory("../contracts/user-service")
+    );
+
+    private static final WireMockServer SUBSCRIPTION_SERVICE_MOCK = new WireMockServer(
+            WireMockConfiguration.wireMockConfig()
+                    .dynamicPort()
+                    .usingFilesUnderDirectory("../contracts/subscription-service")
+    );
+
+    @DynamicPropertySource
+    static void configureExternalServiceUrls(DynamicPropertyRegistry registry) {
+        USER_SERVICE_MOCK.start();
+        SUBSCRIPTION_SERVICE_MOCK.start();
+        registry.add("passtheo.user-service.base-url", USER_SERVICE_MOCK::baseUrl);
+        registry.add("passtheo.subscription-service.base-url", SUBSCRIPTION_SERVICE_MOCK::baseUrl);
+    }
 
     @LocalServerPort
     private int port;
@@ -55,6 +82,16 @@ class KarateRunner {
     @Autowired
     @Qualifier("actualDataSource")
     private DataSource rawDataSource;
+
+    @AfterAll
+    void stopWireMock() {
+        if (USER_SERVICE_MOCK.isRunning()) {
+            USER_SERVICE_MOCK.stop();
+        }
+        if (SUBSCRIPTION_SERVICE_MOCK.isRunning()) {
+            SUBSCRIPTION_SERVICE_MOCK.stop();
+        }
+    }
 
     @BeforeAll
     void setupAll() {

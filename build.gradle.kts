@@ -105,10 +105,33 @@ dependencies {
     testImplementation("org.springframework.kafka:spring-kafka-test")
     testImplementation("io.rest-assured:rest-assured:5.4.0")
     testImplementation("com.intuit.karate:karate-junit5:1.4.1")
+    testImplementation("org.wiremock:wiremock-standalone:3.12.1")
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("acceptance")
+    }
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+val copyContracts by tasks.registering(Copy::class) {
+    description = "Copies contract stubs from the contracts repo into the build directory for use in tests"
+    group = "verification"
+    from("../contracts")
+    into(layout.buildDirectory.dir("contracts"))
+}
+
+val acceptanceTest by tasks.registering(Test::class) {
+    description = "Runs Karate acceptance tests against a booted Spring Boot context"
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("acceptance")
+    }
+    systemProperty("spring.profiles.active", "acceptance")
+    dependsOn(copyContracts)
 }
 
 tasks.withType<JavaCompile> {
@@ -184,10 +207,6 @@ tasks.jacocoTestCoverageVerification {
             )
         }
     }
-}
-
-tasks.test {
-    finalizedBy(tasks.jacocoTestReport)
 }
 
 tasks.check {
