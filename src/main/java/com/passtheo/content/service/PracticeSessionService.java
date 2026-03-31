@@ -137,15 +137,15 @@ public class PracticeSessionService {
             throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "No questions available for the selected criteria");
         }
 
-        // Create session entity
+        // Create session entity and persist the question list so it is fixed for the
+        // entire session — re-running selectQuestions later may shuffle new questions
+        // differently and cause duplicates.
         StudySession session = new StudySession(
                 userId, request.productCode(), request.domainCode(),
                 request.topicCode(), sessionType, questionIds.size());
         session.setTenantId(TenantContext.get());
+        session.setQuestionIdList(questionIds);
         session = sessionRepository.save(session);
-
-        // Store selected question IDs in a transient way (we'll use order-based retrieval)
-        // The question list is determined at session start; answers track order
 
         // Get first question from Strapi cache
         QuestionDto firstQuestion = loadQuestion(questionIds.getFirst(), locale, 1);
@@ -196,6 +196,14 @@ public class PracticeSessionService {
 
         if (session.getStatus() != SessionStatus.IN_PROGRESS) {
             throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_STATUS_TRANSITION, "Session is not in progress: " + session.getStatus());
+        }
+
+        // Idempotency check: if this question was already answered (e.g. network retry),
+        // return the existing result without attempting a duplicate insert.
+        if (answerRepository.findBySessionIdAndStrapiQuestionId(sessionId, request.strapiQuestionId()).isPresent()) {
+            LOG.warn("Duplicate answer detected (idempotency): session={} question={}, returning existing result",
+                    sessionId, request.strapiQuestionId());
+            return buildExistingAnswerResult(userId, sessionId, request.strapiQuestionId(), locale);
         }
 
         // Load question from Strapi
@@ -288,11 +296,14 @@ public class PracticeSessionService {
         // Load next question (null if session complete)
         QuestionDto nextQuestion = null;
         if (session.getAnsweredCount() < session.getTotalQuestions()) {
-            // For simplicity, re-select or use pre-computed list
-            // Here we use position-based: get the next question from the selection
-            List<String> allIds = questionSelectionService.selectQuestions(
-                    userId, session.getProductCode(), session.getDomainCode(),
-                    session.getTotalQuestions(), locale);
+            // Use the question list stored at session start. Fall back to re-selecting only
+            // for legacy sessions that predate V9 (no stored IDs).
+            List<String> allIds = session.getQuestionIdList();
+            if (allIds.isEmpty()) {
+                allIds = questionSelectionService.selectQuestions(
+                        userId, session.getProductCode(), session.getDomainCode(),
+                        session.getTotalQuestions(), locale);
+            }
             if (questionOrder < allIds.size()) {
                 nextQuestion = loadQuestion(allIds.get(questionOrder), locale, questionOrder + 1);
             }
@@ -446,9 +457,13 @@ public class PracticeSessionService {
         QuestionDto currentQuestion = null;
         if (session.getStatus() == SessionStatus.IN_PROGRESS
                 && session.getAnsweredCount() < session.getTotalQuestions()) {
-            List<String> questionIds = questionSelectionService.selectQuestions(
-                    userId, session.getProductCode(), session.getDomainCode(),
-                    session.getTotalQuestions(), locale);
+            // Use stored IDs for deterministic ordering; fall back to re-selection for legacy sessions.
+            List<String> questionIds = session.getQuestionIdList();
+            if (questionIds.isEmpty()) {
+                questionIds = questionSelectionService.selectQuestions(
+                        userId, session.getProductCode(), session.getDomainCode(),
+                        session.getTotalQuestions(), locale);
+            }
             if (session.getAnsweredCount() < questionIds.size()) {
                 currentQuestion = loadQuestion(
                         questionIds.get(session.getAnsweredCount()),
