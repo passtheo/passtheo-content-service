@@ -143,10 +143,11 @@ public class AnswerProcessingService {
     }
 
     private boolean gradeMultipleChoice(StrapiQuestionDto question, Map<String, Object> answer) {
-        String selectedOptionId = (String) answer.get("selectedOptionId");
-        if (selectedOptionId == null || question.answerOptions() == null) {
+        Object rawId = answer.get("selectedOptionId");
+        if (rawId == null || question.answerOptions() == null) {
             return false;
         }
+        String selectedOptionId = rawId.toString();
         return question.answerOptions().stream()
                 .filter(o -> String.valueOf(o.id()).equals(selectedOptionId))
                 .anyMatch(StrapiQuestionDto.AnswerOptionDto::isCorrect);
@@ -176,10 +177,11 @@ public class AnswerProcessingService {
     }
 
     private boolean gradeTapOnImage(StrapiQuestionDto question, Map<String, Object> answer) {
-        String tappedRegionId = (String) answer.get("tappedRegionId");
-        if (tappedRegionId == null || question.imageRegions() == null) {
+        Object rawId = answer.get("tappedRegionId");
+        if (rawId == null || question.imageRegions() == null) {
             return false;
         }
+        String tappedRegionId = rawId.toString();
         return question.imageRegions().stream()
                 .filter(r -> String.valueOf(r.id()).equals(tappedRegionId))
                 .anyMatch(StrapiQuestionDto.ImageRegionDto::isCorrect);
@@ -191,7 +193,9 @@ public class AnswerProcessingService {
         if (selectedObj == null || question.dragTargets() == null) {
             return false;
         }
-        List<String> selectedIds = (List<String>) selectedObj;
+        List<String> selectedIds = ((List<?>) selectedObj).stream()
+                .map(Object::toString)
+                .toList();
         List<String> correctIds = question.dragTargets().stream()
                 .filter(StrapiQuestionDto.DragTargetDto::isCorrect)
                 .map(dt -> String.valueOf(dt.id()))
@@ -206,13 +210,13 @@ public class AnswerProcessingService {
         if (placementsObj == null || question.dragTargets() == null) {
             return false;
         }
-        Map<String, String> placements = (Map<String, String>) placementsObj;
+        Map<?, ?> placements = (Map<?, ?>) placementsObj;
         for (StrapiQuestionDto.DragTargetDto target : question.dragTargets()) {
             if (target.correctValue() == null) {
                 continue;
             }
-            String placed = placements.get(String.valueOf(target.id()));
-            if (!target.correctValue().equals(placed)) {
+            Object placed = placements.get(String.valueOf(target.id()));
+            if (placed == null || !target.correctValue().equals(placed.toString())) {
                 return false;
             }
         }

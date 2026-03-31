@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -63,6 +64,13 @@ public class StudySession extends BaseEntity {
 
     @Column(name = "time_spent_seconds", nullable = false)
     private int timeSpentSeconds;
+
+    /**
+     * Comma-separated Strapi question document IDs in the order they were selected
+     * at session start. Null for sessions created before V9 migration.
+     */
+    @Column(name = "question_ids", columnDefinition = "text")
+    private String questionIds;
 
     protected StudySession() {}
 
@@ -120,4 +128,26 @@ public class StudySession extends BaseEntity {
     public void setLastActivityAt(Instant lastActivityAt) { this.lastActivityAt = lastActivityAt; }
     public int getTimeSpentSeconds() { return timeSpentSeconds; }
     public void setTimeSpentSeconds(int timeSpentSeconds) { this.timeSpentSeconds = timeSpentSeconds; }
+
+    /**
+     * Returns the ordered question IDs stored at session start.
+     * Returns an empty list for legacy sessions (null column).
+     *
+     * @return immutable list of Strapi question document IDs
+     */
+    public List<String> getQuestionIdList() {
+        if (questionIds == null || questionIds.isBlank()) {
+            return java.util.List.of();
+        }
+        return java.util.List.of(questionIds.split(",", -1));
+    }
+
+    /**
+     * Stores the ordered question IDs as a comma-separated string.
+     *
+     * @param ids the ordered question document IDs
+     */
+    public void setQuestionIdList(List<String> ids) {
+        this.questionIds = (ids == null || ids.isEmpty()) ? null : String.join(",", ids);
+    }
 }

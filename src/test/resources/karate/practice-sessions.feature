@@ -175,6 +175,53 @@ Feature: Practice Sessions
     And match response.data.streakUpdate != null
     And assert response.data.streakUpdate.currentStreak >= 0
 
+  # ─── Integer ID tolerance (regression for #9) ───
+
+  Scenario: Submit answer with integer selectedOptionId does not return 500
+    # Flutter sends option/region IDs as integers; server must not ClassCastException
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'verkeersborden', sessionType: 'PRACTICE', questionCount: 1, locale: 'nl' }
+    When method POST
+    Then status 200
+    * def sessionId = response.data.sessionId
+    * def questionId = response.data.currentQuestion.strapiQuestionId
+    # Guard: this scenario requires a multiple_choice question to have answer options
+    And match response.data.currentQuestion.interactionType == 'multiple_choice'
+    # Parse the string option ID to an integer, simulating Flutter's raw Strapi ID usage
+    * def intOptionId = parseInt(response.data.currentQuestion.answerOptions[0].id)
+    Given path '/api/practice/sessions/' + sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(questionId)', answer: { selectedOptionId: '#(intOptionId)' }, timeTakenMs: 2467 }
+    When method POST
+    Then status 200
+    And match response.data.isCorrect == '#boolean'
+    And match response.data.correctAnswer != null
+    And match response.data.sessionProgress.answeredCount == 1
+
+  Scenario: Submitting the same answer twice returns 200 (idempotency)
+    # Network retries must not cause a 500 duplicate key error
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'verkeersborden', sessionType: 'PRACTICE', questionCount: 2, locale: 'nl' }
+    When method POST
+    Then status 200
+    * def sessionId = response.data.sessionId
+    * def questionId = response.data.currentQuestion.strapiQuestionId
+    # First submission — normal answer
+    Given path '/api/practice/sessions/' + sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(questionId)', answer: { selectedOptionId: 'a1' }, timeTakenMs: 3000 }
+    When method POST
+    Then status 200
+    # Second submission of identical request — must return 200, not 500
+    Given path '/api/practice/sessions/' + sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(questionId)', answer: { selectedOptionId: 'a1' }, timeTakenMs: 3000 }
+    When method POST
+    Then status 200
+    And match response.data.sessionProgress.answeredCount == 1
+
   # ─── Language Switch Preserves Progress ───
 
   Scenario: Language switch preserves progress using documentId
