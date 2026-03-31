@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -134,7 +135,7 @@ public class StudySession extends BaseEntity {
      *
      * @return immutable list of Strapi question document IDs
      */
-    public java.util.List<String> getQuestionIdList() {
+    public List<String> getQuestionIdList() {
         if (questionIds == null || questionIds.isBlank()) {
             return java.util.List.of();
         }
@@ -146,7 +147,7 @@ public class StudySession extends BaseEntity {
      *
      * @param ids the ordered question document IDs
      */
-    public void setQuestionIdList(java.util.List<String> ids) {
+    public void setQuestionIdList(List<String> ids) {
         this.questionIds = (ids == null || ids.isEmpty()) ? null : String.join(",", ids);
     }
 }
