@@ -32,6 +32,7 @@ public class StrapiClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(StrapiClient.class);
     private static final String POPULATE_QUESTION = "populate[0]=answerOptions&populate[1]=explanation&populate[2]=imageRegions&populate[3]=dragTargets&populate[4]=image&populate[5]=video&populate[6]=domain&populate[7]=topic&populate[8]=roadSigns";
+    private static final String FILTER_ACTIVE_APPROVED = "&filters[isActive][$eq]=true&filters[reviewStatus][$eq]=APPROVED";
 
     private final WebClient webClient;
 
@@ -127,7 +128,7 @@ public class StrapiClient {
     public List<StrapiQuestionDto> getQuestionsByTopic(@Nonnull String topicCode, @Nonnull String locale) {
         LOG.debug("Fetching questions from Strapi, topic={}, locale={}", topicCode, locale);
         return fetchCollection("/api/questions?filters[topic][code][$eq]=" + topicCode
-                + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
+                + FILTER_ACTIVE_APPROVED + "&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=100",
                 new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
                 });
@@ -143,7 +144,7 @@ public class StrapiClient {
     public List<StrapiQuestionDto> getQuestionsByDomain(@Nonnull String domainCode, @Nonnull String locale) {
         LOG.debug("Fetching questions from Strapi, domain={}, locale={}", domainCode, locale);
         return fetchCollection("/api/questions?filters[topic][domain][code][$eq]=" + domainCode
-                + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
+                + FILTER_ACTIVE_APPROVED + "&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=200",
                 new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
                 });
@@ -159,7 +160,7 @@ public class StrapiClient {
     public List<StrapiQuestionDto> getQuestionsByProduct(@Nonnull String productCode, @Nonnull String locale) {
         LOG.debug("Fetching all questions from Strapi, product={}, locale={}", productCode, locale);
         return fetchCollection("/api/questions?filters[topic][domain][product][code][$eq]=" + productCode
-                + "&filters[isActive][$eq]=true&" + POPULATE_QUESTION + "&locale=" + locale
+                + FILTER_ACTIVE_APPROVED + "&" + POPULATE_QUESTION + "&locale=" + locale
                 + "&pagination[pageSize]=500",
                 new ParameterizedTypeReference<StrapiResponse<StrapiQuestionDto>>() {
                 });

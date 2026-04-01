@@ -131,7 +131,7 @@ public class ContentController {
                                 p.examConfig().totalQuestions(),
                                 p.examConfig().timeLimitMinutes(),
                                 p.examConfig().passScore()) : null,
-                        p.domainCount(), p.totalQuestions()))
+                        p.domainCount(), strapiContentCache.getQuestionCount(p.code(), locale)))
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(products, MDC.get("traceId")));
     }
@@ -175,9 +175,7 @@ public class ContentController {
                     dp.getStrength() != null ? dp.getStrength().name() : "UNKNOWN")
                     : new DomainWithProgressDto.ProgressOverlay(0.0, 0.0, 0, "UNKNOWN");
 
-            int questionCount = d.questionCount() != null
-                    ? d.questionCount()
-                    : strapiContentCache.getQuestionsByDomain(d.code(), locale).size();
+            int questionCount = strapiContentCache.getQuestionCountByDomain(d.code(), locale);
 
             return new DomainWithProgressDto(
                     d.code(), d.name(), d.icon(), d.color(),
@@ -208,8 +206,7 @@ public class ContentController {
         var topics = strapiContentCache.getTopics(domainCode, locale).stream()
                 .map(t -> new TopicWithProgressDto(
                         t.code(), t.name(), t.difficulty(),
-                        t.questionCount() != null ? t.questionCount()
-                                : strapiContentCache.getQuestionsByTopic(t.code(), locale).size(),
+                        strapiContentCache.getQuestionCountByTopic(t.code(), locale),
                         null))
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(topics, MDC.get("traceId")));
