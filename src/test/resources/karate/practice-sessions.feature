@@ -222,6 +222,39 @@ Feature: Practice Sessions
     Then status 200
     And match response.data.sessionProgress.answeredCount == 1
 
+  # ─── Session Locale Persistence ───
+
+  Scenario: Session locale is owned by session — content stays in English regardless of client header
+    # Start session with locale=en
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'verkeersborden', sessionType: 'PRACTICE', questionCount: 3, locale: 'en' }
+    When method POST
+    Then status 200
+    * def sessionId = response.data.sessionId
+    * def firstQuestion = response.data.currentQuestion
+    # First question text must be in English (not Dutch)
+    And match firstQuestion.questionText != null
+    # Submit answer — no locale param sent, backend must use session-stored locale
+    Given path '/api/practice/sessions/' + sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(firstQuestion.strapiQuestionId)', answer: { selectedOptionId: 'a1' }, timeTakenMs: 4000 }
+    When method POST
+    Then status 200
+    # Explanation must exist (returned from session locale=en, not Dutch fallback)
+    And match response.data.explanation != null
+    And match response.data.explanation.text == '#string'
+    # Next question must be returned (session locale=en applied)
+    And match response.data.nextQuestion != null
+    And match response.data.nextQuestion.questionOrder == 2
+    # Resume the session — must return English question
+    Given path '/api/practice/sessions/' + sessionId
+    And headers paidHeaders
+    When method GET
+    Then status 200
+    And match response.data.currentQuestion != null
+    And match response.data.currentQuestion.questionOrder == 2
+
   # ─── Language Switch Preserves Progress ───
 
   Scenario: Language switch preserves progress using documentId

@@ -436,8 +436,11 @@ paths:
       description: |
         Records the answer, updates spaced repetition state, checks streak,
         checks achievements (async), and returns feedback + next question.
-        
+
         For free users, increments usage counter via subscription-service.
+
+        Content locale is read from the session record (stored at session creation).
+        The client does not need to send locale — the session is the source of truth.
       security:
         - bearerAuth: []
       parameters:
@@ -499,6 +502,9 @@ paths:
       operationId: getSession
       tags: [Practice]
       summary: Get current session state (for resuming after app close)
+      description: |
+        Returns the session with the current unanswered question.
+        Content locale is read from the session record — not from a query parameter.
       security:
         - bearerAuth: []
       parameters:
