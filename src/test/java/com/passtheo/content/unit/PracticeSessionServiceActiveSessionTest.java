@@ -66,7 +66,7 @@ class PracticeSessionServiceActiveSessionTest {
     @Test
     void getActiveSession_sessionExists_returnsDto() {
         StudySession session = new StudySession(USER_ID, PRODUCT_CODE, "voorrang", null,
-                SessionType.PRACTICE, 20);
+                SessionType.PRACTICE, 20, "nl");
         session.setId(UUID.randomUUID());
         session.setAnsweredCount(7);
 
@@ -106,7 +106,7 @@ class PracticeSessionServiceActiveSessionTest {
     @Test
     void getActiveSession_nullDomainCode_returnsNullDomainName() {
         StudySession session = new StudySession(USER_ID, PRODUCT_CODE, null, null,
-                SessionType.QUICK_QUIZ, 5);
+                SessionType.QUICK_QUIZ, 5, "nl");
         session.setId(UUID.randomUUID());
 
         when(sessionRepository.findFirstByKeycloakUserIdAndProductCodeAndStatusOrderByLastActivityAtDesc(

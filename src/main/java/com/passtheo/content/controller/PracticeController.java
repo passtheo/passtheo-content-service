@@ -106,12 +106,12 @@ public class PracticeController {
 
     /**
      * Submits an answer for the current question.
+     * Content locale is read from the session record — no locale parameter needed.
      *
      * @param sessionId the session ID
      * @param tenantId  tenant ID from header
      * @param userId    user ID from header
      * @param request   answer request
-     * @param locale    content locale
      * @return answer result with feedback + next question
      */
     @PostMapping("/{sessionId}/answer")
@@ -119,8 +119,7 @@ public class PracticeController {
             @PathVariable @Nonnull UUID sessionId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             @RequestHeader("X-Keycloak-User-ID") UUID userId,
-            @RequestBody @Valid @Nonnull SubmitAnswerRequest request,
-            @RequestParam(defaultValue = "nl") String locale) {
+            @RequestBody @Valid @Nonnull SubmitAnswerRequest request) {
 
         if (!subscriptionClient.incrementQuestionUsage(tenantId, userId)) {
             ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
@@ -130,25 +129,24 @@ public class PracticeController {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(problem);
         }
 
-        AnswerResultDto result = practiceSessionService.submitAnswer(userId, sessionId, request, locale);
+        AnswerResultDto result = practiceSessionService.submitAnswer(userId, sessionId, request);
         return ResponseEntity.ok(ApiResponse.success(result, MDC.get("traceId")));
     }
 
     /**
      * Gets current session state (for resuming after app close).
+     * Content locale is read from the session record.
      *
      * @param sessionId the session ID
      * @param userId    user ID from header
-     * @param locale    content locale
      * @return session with current question
      */
     @GetMapping("/{sessionId}")
     public ResponseEntity<ApiResponse<SessionDto>> getSession(
             @PathVariable @Nonnull UUID sessionId,
-            @RequestHeader("X-Keycloak-User-ID") UUID userId,
-            @RequestParam(defaultValue = "nl") String locale) {
+            @RequestHeader("X-Keycloak-User-ID") UUID userId) {
 
-        SessionDto session = practiceSessionService.getSession(userId, sessionId, locale);
+        SessionDto session = practiceSessionService.getSession(userId, sessionId);
         return ResponseEntity.ok(ApiResponse.success(session, MDC.get("traceId")));
     }
 

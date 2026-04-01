@@ -139,10 +139,11 @@ public class PracticeSessionService {
 
         // Create session entity and persist the question list so it is fixed for the
         // entire session — re-running selectQuestions later may shuffle new questions
-        // differently and cause duplicates.
+        // differently and cause duplicates. The locale is stored here and used for all
+        // subsequent Strapi fetches; the session is the source of truth for locale.
         StudySession session = new StudySession(
                 userId, request.productCode(), request.domainCode(),
-                request.topicCode(), sessionType, questionIds.size());
+                request.topicCode(), sessionType, questionIds.size(), locale);
         session.setTenantId(TenantContext.get());
         session.setQuestionIdList(questionIds);
         session = sessionRepository.save(session);
@@ -170,29 +171,31 @@ public class PracticeSessionService {
 
     /**
      * Submits an answer, grades it, updates mastery, returns feedback + next question.
+     * The content locale is read from the session record — not from the caller.
      *
      * @param userId    the user's Keycloak ID
      * @param sessionId the session ID
      * @param request   the answer request
-     * @param locale    the content locale
      * @return the answer result with feedback
      */
     @Transactional
     public AnswerResultDto submitAnswer(@Nonnull UUID userId, @Nonnull UUID sessionId,
-                                        @Nonnull SubmitAnswerRequest request, @Nonnull String locale) {
+                                        @Nonnull SubmitAnswerRequest request) {
         try {
-            return doSubmitAnswer(userId, sessionId, request, locale);
+            return doSubmitAnswer(userId, sessionId, request);
         } catch (DataIntegrityViolationException ex) {
             LOG.warn("Duplicate answer detected for session={} question={}, returning existing result",
                     sessionId, request.strapiQuestionId());
-            return buildExistingAnswerResult(userId, sessionId, request.strapiQuestionId(), locale);
+            return buildExistingAnswerResult(userId, sessionId, request.strapiQuestionId());
         }
     }
 
     private AnswerResultDto doSubmitAnswer(UUID userId, UUID sessionId,
-                                           SubmitAnswerRequest request, String locale) {
+                                           SubmitAnswerRequest request) {
         StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Session not found: " + sessionId));
+        // The session is the source of truth for locale — never trust a request parameter.
+        String locale = session.getLocale();
 
         if (session.getStatus() != SessionStatus.IN_PROGRESS) {
             throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_STATUS_TRANSITION, "Session is not in progress: " + session.getStatus());
@@ -203,7 +206,7 @@ public class PracticeSessionService {
         if (answerRepository.findBySessionIdAndStrapiQuestionId(sessionId, request.strapiQuestionId()).isPresent()) {
             LOG.warn("Duplicate answer detected (idempotency): session={} question={}, returning existing result",
                     sessionId, request.strapiQuestionId());
-            return buildExistingAnswerResult(userId, sessionId, request.strapiQuestionId(), locale);
+            return buildExistingAnswerResult(userId, sessionId, request.strapiQuestionId());
         }
 
         // Load question from Strapi
@@ -333,13 +336,14 @@ public class PracticeSessionService {
     }
 
     private AnswerResultDto buildExistingAnswerResult(UUID userId, UUID sessionId,
-                                                      String strapiQuestionId, String locale) {
+                                                      String strapiQuestionId) {
         SessionAnswer existing = answerRepository.findBySessionIdAndStrapiQuestionId(sessionId, strapiQuestionId)
                 .orElseThrow(() -> new AppException(HttpStatus.CONFLICT, ErrorCode.VALIDATION_ERROR,
                         "Duplicate answer but existing record not found"));
         StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
                         "Session not found: " + sessionId));
+        String locale = session.getLocale();
         StrapiQuestionDto question = strapiContentCache.getQuestion(strapiQuestionId, locale);
         Map<String, Object> correctAnswer = question != null
                 ? answerProcessingService.buildCorrectAnswer(question) : Map.of();
@@ -443,16 +447,17 @@ public class PracticeSessionService {
 
     /**
      * Gets current session state for resuming.
+     * Content locale is read from the session record — not from the caller.
      *
      * @param userId    the user's Keycloak ID
      * @param sessionId the session ID
-     * @param locale    the content locale
      * @return the session with current question
      */
     @Transactional(readOnly = true)
-    public SessionDto getSession(@Nonnull UUID userId, @Nonnull UUID sessionId, @Nonnull String locale) {
+    public SessionDto getSession(@Nonnull UUID userId, @Nonnull UUID sessionId) {
         StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Session not found: " + sessionId));
+        String locale = session.getLocale();
 
         QuestionDto currentQuestion = null;
         if (session.getStatus() == SessionStatus.IN_PROGRESS

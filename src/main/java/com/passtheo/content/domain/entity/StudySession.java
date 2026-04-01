@@ -66,6 +66,14 @@ public class StudySession extends BaseEntity {
     private int timeSpentSeconds;
 
     /**
+     * Content locale for this session (e.g. "nl", "en"). Set once at creation
+     * from the start-session request and never changed. All Strapi fetches
+     * during this session use this locale.
+     */
+    @Column(name = "locale", nullable = false, length = 10)
+    private String locale;
+
+    /**
      * Comma-separated Strapi question document IDs in the order they were selected
      * at session start. Null for sessions created before V9 migration.
      */
@@ -82,10 +90,12 @@ public class StudySession extends BaseEntity {
      * @param domainCode     the domain code (nullable for mixed)
      * @param topicCode      the topic code (nullable for all topics)
      * @param sessionType    the session type
-     * @param totalQuestions  the total number of questions
+     * @param totalQuestions the total number of questions
+     * @param locale         the content locale for this session (e.g. "nl", "en")
      */
     public StudySession(UUID keycloakUserId, String productCode, String domainCode,
-                        String topicCode, SessionType sessionType, int totalQuestions) {
+                        String topicCode, SessionType sessionType, int totalQuestions,
+                        String locale) {
         this.keycloakUserId = keycloakUserId;
         this.productCode = productCode;
         this.domainCode = domainCode;
@@ -98,6 +108,7 @@ public class StudySession extends BaseEntity {
         this.startedAt = Instant.now();
         this.lastActivityAt = Instant.now();
         this.timeSpentSeconds = 0;
+        this.locale = locale;
     }
 
     public UUID getKeycloakUserId() { return keycloakUserId; }
@@ -128,6 +139,8 @@ public class StudySession extends BaseEntity {
     public void setLastActivityAt(Instant lastActivityAt) { this.lastActivityAt = lastActivityAt; }
     public int getTimeSpentSeconds() { return timeSpentSeconds; }
     public void setTimeSpentSeconds(int timeSpentSeconds) { this.timeSpentSeconds = timeSpentSeconds; }
+    public String getLocale() { return locale; }
+    public void setLocale(String locale) { this.locale = locale; }
 
     /**
      * Returns the ordered question IDs stored at session start.
