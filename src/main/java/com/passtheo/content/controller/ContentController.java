@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 public class ContentController {
 
     private static final Logger LOG = LoggerFactory.getLogger(ContentController.class);
+    private static final String COUNT_LOCALE = "nl";
 
     private final StrapiContentCache strapiContentCache;
     private final DomainProgressRepository domainProgressRepository;
@@ -131,7 +132,7 @@ public class ContentController {
                                 p.examConfig().totalQuestions(),
                                 p.examConfig().timeLimitMinutes(),
                                 p.examConfig().passScore()) : null,
-                        p.domainCount(), strapiContentCache.getQuestionCount(p.code(), locale)))
+                        p.domainCount(), strapiContentCache.getQuestionCount(p.code(), COUNT_LOCALE)))
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(products, MDC.get("traceId")));
     }
@@ -175,7 +176,7 @@ public class ContentController {
                     dp.getStrength() != null ? dp.getStrength().name() : "UNKNOWN")
                     : new DomainWithProgressDto.ProgressOverlay(0.0, 0.0, 0, "UNKNOWN");
 
-            int questionCount = strapiContentCache.getQuestionCountByDomain(d.code(), locale);
+            int questionCount = strapiContentCache.getQuestionCountByDomain(d.code(), COUNT_LOCALE);
 
             return new DomainWithProgressDto(
                     d.code(), d.name(), d.icon(), d.color(),
@@ -206,7 +207,7 @@ public class ContentController {
         var topics = strapiContentCache.getTopics(domainCode, locale).stream()
                 .map(t -> new TopicWithProgressDto(
                         t.code(), t.name(), t.difficulty(),
-                        strapiContentCache.getQuestionCountByTopic(t.code(), locale),
+                        strapiContentCache.getQuestionCountByTopic(t.code(), COUNT_LOCALE),
                         null))
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(topics, MDC.get("traceId")));

@@ -61,6 +61,7 @@ public class PracticeSessionService {
 
     private static final Logger LOG = LoggerFactory.getLogger(PracticeSessionService.class);
     private static final Logger AUDIT = LoggerFactory.getLogger("AUDIT");
+    private static final String COUNT_LOCALE = "nl";
 
     /** JSON representation of a skipped answer stored in session_answers.user_answer. */
     private static final String SKIP_ANSWER_JSON = "null";
@@ -600,7 +601,7 @@ public class PracticeSessionService {
                 .filter(StrapiDomainDto::isActive)
                 .sorted(Comparator.comparingInt(StrapiDomainDto::sortOrder))
                 .map(d -> {
-                    int totalQuestions = strapiContentCache.getQuestionCountByDomain(d.code(), locale);
+                    int totalQuestions = strapiContentCache.getQuestionCountByDomain(d.code(), COUNT_LOCALE);
                     boolean isLocked = !access.isPaid() && !d.isFreePreview();
                     DomainProgress dp = progressMap.get(d.code());
 
