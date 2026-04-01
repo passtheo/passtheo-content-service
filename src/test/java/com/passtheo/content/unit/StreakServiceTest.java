@@ -1,5 +1,6 @@
 package com.passtheo.content.unit;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.domain.entity.Streak;
 import com.passtheo.content.domain.valueobject.StreakResult;
 import com.passtheo.content.repository.OutboxEventRepository;
@@ -34,6 +35,7 @@ class StreakServiceTest {
     @Mock private StreakRepository streakRepository;
     @Mock private SessionAnswerRepository sessionAnswerRepository;
     @Mock private OutboxEventRepository outboxEventRepository;
+    @Mock private ObjectMapper objectMapper;
 
     private StreakService service;
 
@@ -43,7 +45,7 @@ class StreakServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new StreakService(streakRepository, sessionAnswerRepository, outboxEventRepository);
+        service = new StreakService(streakRepository, sessionAnswerRepository, outboxEventRepository, objectMapper);
         TenantContext.set(TENANT_ID);
     }
 
@@ -179,10 +181,10 @@ class StreakServiceTest {
     @Test
     void computeLastSevenDays_threeDaysStudied_correctBooleanArray() {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        List<java.sql.Date> studyDates = List.of(
-                java.sql.Date.valueOf(today),
-                java.sql.Date.valueOf(today.minusDays(1)),
-                java.sql.Date.valueOf(today.minusDays(4))
+        List<LocalDate> studyDates = List.of(
+                today,
+                today.minusDays(1),
+                today.minusDays(4)
         );
         when(sessionAnswerRepository.findStudyDatesBetween(any(), any(), any(Instant.class), any(Instant.class)))
                 .thenReturn(studyDates);
@@ -203,9 +205,9 @@ class StreakServiceTest {
     @Test
     void computeLastSevenDays_allDaysStudied_allTrue() {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        List<java.sql.Date> studyDates = new java.util.ArrayList<>();
+        List<LocalDate> studyDates = new java.util.ArrayList<>();
         for (int i = 0; i < 7; i++) {
-            studyDates.add(java.sql.Date.valueOf(today.minusDays(i)));
+            studyDates.add(today.minusDays(i));
         }
         when(sessionAnswerRepository.findStudyDatesBetween(any(), any(), any(Instant.class), any(Instant.class)))
                 .thenReturn(studyDates);

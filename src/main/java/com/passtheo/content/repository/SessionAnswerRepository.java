@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -63,7 +64,7 @@ public interface SessionAnswerRepository extends JpaRepository<SessionAnswer, UU
               AND sa.answered_at < :endDate
             ORDER BY 1
             """, nativeQuery = true)
-    List<java.sql.Date> findStudyDatesBetween(
+    List<LocalDate> findStudyDatesBetween(
             @Param("userId") UUID userId,
             @Param("productCode") String productCode,
             @Param("startDate") Instant startDate,

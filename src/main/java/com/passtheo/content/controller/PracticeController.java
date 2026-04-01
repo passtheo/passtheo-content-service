@@ -6,6 +6,7 @@ import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
+import com.passtheo.content.integration.subscription.SubscriptionClient;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.shared.core.dto.ApiResponse;
@@ -40,17 +41,21 @@ public class PracticeController {
 
     private final PracticeSessionService practiceSessionService;
     private final EntitlementChecker entitlementChecker;
+    private final SubscriptionClient subscriptionClient;
 
     /**
      * Constructs the practice controller.
      *
      * @param practiceSessionService practice session service
      * @param entitlementChecker     entitlement checker
+     * @param subscriptionClient     subscription client for usage tracking
      */
     public PracticeController(PracticeSessionService practiceSessionService,
-                              EntitlementChecker entitlementChecker) {
+                              EntitlementChecker entitlementChecker,
+                              SubscriptionClient subscriptionClient) {
         this.practiceSessionService = practiceSessionService;
         this.entitlementChecker = entitlementChecker;
+        this.subscriptionClient = subscriptionClient;
     }
 
     /**
@@ -106,15 +111,24 @@ public class PracticeController {
      * @param tenantId  tenant ID from header
      * @param userId    user ID from header
      * @param request   answer request
+     * @param locale    content locale
      * @return answer result with feedback + next question
      */
     @PostMapping("/{sessionId}/answer")
-    public ResponseEntity<ApiResponse<AnswerResultDto>> submitAnswer(
+    public ResponseEntity<?> submitAnswer(
             @PathVariable @Nonnull UUID sessionId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @RequestBody @Valid @Nonnull SubmitAnswerRequest request,
             @RequestParam(defaultValue = "nl") String locale) {
+
+        if (!subscriptionClient.incrementQuestionUsage(tenantId, userId)) {
+            ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
+            problem.setTitle("Daily question limit reached");
+            problem.setDetail("You have reached your daily question limit. Upgrade to continue practicing.");
+            problem.setType(URI.create("about:blank"));
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(problem);
+        }
 
         AnswerResultDto result = practiceSessionService.submitAnswer(userId, sessionId, request, locale);
         return ResponseEntity.ok(ApiResponse.success(result, MDC.get("traceId")));

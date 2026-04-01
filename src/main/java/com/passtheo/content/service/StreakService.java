@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Manages daily study streaks and freeze slots.
@@ -45,11 +44,10 @@ public class StreakService {
     private static final int FREEZE_AWARD_14 = 2;
     private static final int FREEZE_AWARD_30 = 3;
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     private final StreakRepository streakRepository;
     private final SessionAnswerRepository sessionAnswerRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * Constructs the streak service.
@@ -57,13 +55,16 @@ public class StreakService {
      * @param streakRepository        the streak repository
      * @param sessionAnswerRepository the session answer repository
      * @param outboxEventRepository   the outbox event repository
+     * @param objectMapper            the Jackson object mapper (with JSR-310 module)
      */
     public StreakService(StreakRepository streakRepository,
                         SessionAnswerRepository sessionAnswerRepository,
-                        OutboxEventRepository outboxEventRepository) {
+                        OutboxEventRepository outboxEventRepository,
+                        ObjectMapper objectMapper) {
         this.streakRepository = streakRepository;
         this.sessionAnswerRepository = sessionAnswerRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -195,11 +196,8 @@ public class StreakService {
         Instant startDate = sixDaysAgo.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant endDate = today.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
-        Set<LocalDate> studyDates = sessionAnswerRepository
-                .findStudyDatesBetween(userId, productCode, startDate, endDate)
-                .stream()
-                .map(java.sql.Date::toLocalDate)
-                .collect(Collectors.toSet());
+        Set<LocalDate> studyDates = Set.copyOf(
+                sessionAnswerRepository.findStudyDatesBetween(userId, productCode, startDate, endDate));
 
         List<Boolean> result = new ArrayList<>(7);
         for (int i = 0; i < 7; i++) {
@@ -217,7 +215,7 @@ public class StreakService {
             outbox.setTenantId(tenantId);
             outbox.setEventType(event.eventType());
             outbox.setTopic(KafkaTopic.CONTENT_EVENTS);
-            outbox.setPayload(OBJECT_MAPPER.writeValueAsString(event));
+            outbox.setPayload(objectMapper.writeValueAsString(event));
             outbox.setStatus(OutboxStatus.PENDING);
             outbox.setPartitionKey(userId.toString());
             outboxEventRepository.save(outbox);
