@@ -1,7 +1,9 @@
 package com.passtheo.content;
 
+import com.passtheo.shared.security.datasource.DataSourceConfig;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Import;
 
 /**
  * Main entry point for the PassTheo Content Service.
@@ -9,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * spaced repetition, progress tracking, streaks, achievements, and study plans.
  */
 @SpringBootApplication
+@Import(DataSourceConfig.class)
 public class ContentServiceApplication {
 
     /**
