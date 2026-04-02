@@ -8,7 +8,7 @@ import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.DomainProgressRepository;
-import com.passtheo.content.repository.OutboxEventRepository;
+import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StudySessionRepository;

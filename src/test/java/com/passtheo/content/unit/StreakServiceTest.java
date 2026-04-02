@@ -3,7 +3,7 @@ package com.passtheo.content.unit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.domain.entity.Streak;
 import com.passtheo.content.domain.valueobject.StreakResult;
-import com.passtheo.content.repository.OutboxEventRepository;
+import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.service.StreakService;

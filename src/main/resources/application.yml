@@ -111,6 +111,9 @@ passtheo:
     ttl-seconds: ${CONTENT_CACHE_TTL_SECONDS:3600}
   free-tier:
     daily-question-limit: 10
+  outbox:
+    enabled: true
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
     weekly-exam-limit: 1
 
 resilience4j:
@@ -134,8 +137,6 @@ resilience4j:
         waitDurationInOpenState: 10s
         failureRateThreshold: 50
 
-outbox:
-  poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
 
 springdoc:
   api-docs:
