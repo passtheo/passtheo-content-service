@@ -39,6 +39,7 @@ dependencies {
     // PassTheo shared libraries
     implementation("com.passtheo:shared-core:1.0.0-SNAPSHOT")
     implementation("com.passtheo:shared-security:1.0.0-SNAPSHOT")
+    implementation("com.passtheo:shared-outbox:1.0.0-SNAPSHOT")
     implementation("com.passtheo:shared-events:1.0.0-SNAPSHOT") {
         exclude(group = "org.lz4", module = "lz4-java")
         exclude(group = "at.yawk.lz4", module = "lz4-java")

@@ -2,11 +2,11 @@ package com.passtheo.content.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.passtheo.content.domain.entity.OutboxEvent;
+import com.passtheo.shared.outbox.entity.OutboxEvent;
 import com.passtheo.content.domain.entity.Streak;
-import com.passtheo.content.domain.enums.OutboxStatus;
+import com.passtheo.shared.outbox.entity.OutboxStatus;
 import com.passtheo.content.domain.valueobject.StreakResult;
-import com.passtheo.content.repository.OutboxEventRepository;
+import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.shared.core.context.TenantContext;

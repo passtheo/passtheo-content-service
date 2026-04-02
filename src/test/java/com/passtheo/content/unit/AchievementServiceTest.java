@@ -8,7 +8,7 @@ import com.passtheo.content.integration.strapi.dto.StrapiAchievementDefDto;
 import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.EarnedAchievementRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
-import com.passtheo.content.repository.OutboxEventRepository;
+import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.service.AchievementService;
