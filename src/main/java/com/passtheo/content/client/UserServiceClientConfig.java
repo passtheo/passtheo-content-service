@@ -1,14 +1,19 @@
 package com.passtheo.content.client;
 
+import com.passtheo.shared.core.client.UserServiceInternalClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
+
 /**
- * Configures the WebClient for user-service internal API calls.
+ * Configures the WebClient and UserServiceInternalClient for user-service internal API calls.
  */
 @Configuration
 public class UserServiceClientConfig {
@@ -28,5 +33,20 @@ public class UserServiceClientConfig {
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(1024 * 1024))
                 .build();
+    }
+
+    /**
+     * Creates the shared client for user-service internal profile calls.
+     *
+     * @param webClient     the pre-configured user-service WebClient
+     * @param redisTemplate Redis template for caching
+     * @return the user-service internal client
+     */
+    @Bean
+    public UserServiceInternalClient userServiceInternalClient(
+            @Qualifier("contentUserServiceWebClient") WebClient webClient,
+            StringRedisTemplate redisTemplate) {
+        return new UserServiceInternalClient(webClient, redisTemplate,
+                "content:user-profile:", Duration.ofMinutes(5));
     }
 }

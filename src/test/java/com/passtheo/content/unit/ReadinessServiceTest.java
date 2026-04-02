@@ -1,6 +1,6 @@
 package com.passtheo.content.unit;
 
-import com.passtheo.content.client.UserServiceClient;
+import com.passtheo.shared.core.client.UserServiceInternalClient;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
@@ -38,7 +38,7 @@ class ReadinessServiceTest {
     @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private ExamAttemptRepository examAttemptRepository;
     @Mock private StrapiContentCache strapiContentCache;
-    @Mock private UserServiceClient userServiceClient;
+    @Mock private UserServiceInternalClient userServiceClient;
 
     private ReadinessService service;
 
