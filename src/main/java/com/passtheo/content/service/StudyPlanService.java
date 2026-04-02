@@ -12,7 +12,7 @@ import com.passtheo.content.domain.enums.MasteryLevel;
 import com.passtheo.content.dto.request.GenerateStudyPlanRequest;
 import com.passtheo.content.dto.response.StudyPlanDayDto;
 import com.passtheo.content.dto.response.StudyPlanDto;
-import com.passtheo.content.client.UserServiceClient;
+import com.passtheo.shared.core.client.UserServiceInternalClient;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
@@ -64,7 +64,7 @@ public class StudyPlanService {
     private final ReadinessService readinessService;
     private final StrapiContentCache strapiContentCache;
     private final ObjectMapper objectMapper;
-    private final UserServiceClient userServiceClient;
+    private final UserServiceInternalClient userServiceClient;
     private final QuestionProgressRepository progressRepository;
 
     /**
@@ -83,7 +83,7 @@ public class StudyPlanService {
                             ReadinessService readinessService,
                             StrapiContentCache strapiContentCache,
                             ObjectMapper objectMapper,
-                            UserServiceClient userServiceClient,
+                            UserServiceInternalClient userServiceClient,
                             QuestionProgressRepository progressRepository) {
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;

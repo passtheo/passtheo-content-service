@@ -1,6 +1,6 @@
 package com.passtheo.content.service;
 
-import com.passtheo.content.client.UserServiceClient;
+import com.passtheo.shared.core.client.UserServiceInternalClient;
 import com.passtheo.content.domain.entity.DomainProgress;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
@@ -56,7 +56,7 @@ public class ReadinessService {
     private final DomainProgressRepository domainProgressRepository;
     private final ExamAttemptRepository examAttemptRepository;
     private final StrapiContentCache strapiContentCache;
-    private final UserServiceClient userServiceClient;
+    private final UserServiceInternalClient userServiceClient;
 
     /**
      * Constructs the readiness service.
@@ -71,7 +71,7 @@ public class ReadinessService {
                             DomainProgressRepository domainProgressRepository,
                             ExamAttemptRepository examAttemptRepository,
                             StrapiContentCache strapiContentCache,
-                            UserServiceClient userServiceClient) {
+                            UserServiceInternalClient userServiceClient) {
         this.progressRepository = progressRepository;
         this.domainProgressRepository = domainProgressRepository;
         this.examAttemptRepository = examAttemptRepository;
