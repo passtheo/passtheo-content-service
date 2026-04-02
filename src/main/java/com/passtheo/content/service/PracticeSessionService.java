@@ -600,7 +600,7 @@ public class PracticeSessionService {
                 .filter(StrapiDomainDto::isActive)
                 .sorted(Comparator.comparingInt(StrapiDomainDto::sortOrder))
                 .map(d -> {
-                    int totalQuestions = d.questionCount() != null ? d.questionCount() : 0;
+                    int totalQuestions = strapiContentCache.getQuestionCountByDomain(d.code(), locale);
                     boolean isLocked = !access.isPaid() && !d.isFreePreview();
                     DomainProgress dp = progressMap.get(d.code());
 

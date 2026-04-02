@@ -184,6 +184,28 @@ public class StrapiContentCache {
     }
 
     /**
+     * Gets total question count for a domain (active + approved + published).
+     *
+     * @param domainCode the domain code
+     * @param locale     the content locale
+     * @return question count for the domain
+     */
+    public int getQuestionCountByDomain(@Nonnull String domainCode, @Nonnull String locale) {
+        return getQuestionsByDomain(domainCode, locale).size();
+    }
+
+    /**
+     * Gets total question count for a topic (active + approved + published).
+     *
+     * @param topicCode the topic code
+     * @param locale    the content locale
+     * @return question count for the topic
+     */
+    public int getQuestionCountByTopic(@Nonnull String topicCode, @Nonnull String locale) {
+        return getQuestionsByTopic(topicCode, locale).size();
+    }
+
+    /**
      * Gets a single question by ID with caching.
      *
      * @param questionId the Strapi question ID

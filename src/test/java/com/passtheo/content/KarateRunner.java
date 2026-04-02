@@ -140,6 +140,12 @@ class KarateRunner {
                 .thenReturn(buildDomains());
         when(strapiClient.getTopics(anyString(), anyString()))
                 .thenReturn(buildTopics());
+        when(strapiClient.getQuestionsByTopic(eq("gebodsborden"), anyString()))
+                .thenReturn(buildQuestions("gebodsborden", 15));
+        when(strapiClient.getQuestionsByTopic(eq("verbodsborden"), anyString()))
+                .thenReturn(buildQuestions("verbodsborden", 15));
+        when(strapiClient.getQuestionsByTopic(anyString(), anyString()))
+                .thenReturn(buildQuestions("topic-generic", 10));
         when(strapiClient.getQuestionsByDomain(eq("verkeersborden"), anyString()))
                 .thenReturn(buildQuestions("verkeersborden", 20));
         when(strapiClient.getQuestionsByDomain(eq("snelheid"), anyString()))
