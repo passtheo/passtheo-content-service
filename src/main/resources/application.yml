@@ -111,10 +111,10 @@ passtheo:
     ttl-seconds: ${CONTENT_CACHE_TTL_SECONDS:3600}
   free-tier:
     daily-question-limit: 10
+    weekly-exam-limit: 1
   outbox:
     enabled: true
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
-    weekly-exam-limit: 1
 
 resilience4j:
   circuitbreaker:
