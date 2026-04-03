@@ -4,7 +4,6 @@ import com.passtheo.content.controller.ContentController;
 import com.passtheo.content.dto.response.TopicWithProgressDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiTopicDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
@@ -28,7 +27,6 @@ import static org.mockito.Mockito.when;
 class ContentControllerListTopicsTest {
 
     @Mock private StrapiContentCache strapiContentCache;
-    @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private QuestionProgressRepository questionProgressRepository;
     @Mock private EntitlementChecker entitlementChecker;
     @Mock private OnboardingCatalogService onboardingCatalogService;
@@ -44,8 +42,8 @@ class ContentControllerListTopicsTest {
     @BeforeEach
     void setUp() {
         controller = new ContentController(
-                strapiContentCache, domainProgressRepository,
-                questionProgressRepository, entitlementChecker, onboardingCatalogService);
+                strapiContentCache, questionProgressRepository,
+                entitlementChecker, onboardingCatalogService);
     }
 
     @Test
