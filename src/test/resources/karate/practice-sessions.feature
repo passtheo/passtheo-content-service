@@ -45,6 +45,14 @@ Feature: Practice Sessions
     Then status 200
     And match response.data.status == 'IN_PROGRESS'
 
+  Scenario: Domain with fewer than 5 questions returns 400
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'tiny-domain', sessionType: 'PRACTICE', questionCount: 10, locale: 'nl' }
+    When method POST
+    Then status 400
+    And match response.detail contains 'At least 5 required'
+
   Scenario: Free user blocked from locked domain
     Given path '/api/practice/sessions'
     And headers freeHeaders

@@ -122,6 +122,16 @@ public class PracticeSessionService {
         SessionType sessionType = SessionType.valueOf(request.sessionType());
         String locale = request.locale() != null ? request.locale() : "nl";
 
+        // Check minimum question pool before selection — domains with < 5 questions
+        // produce broken navigator grids in Flutter
+        int availableCount = (request.domainCode() != null && !request.domainCode().isBlank())
+                ? strapiContentCache.getQuestionCountByDomain(request.domainCode(), locale)
+                : strapiContentCache.getQuestionCount(request.productCode(), locale);
+        if (availableCount < 5) {
+            throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR,
+                    "Not enough questions available for this domain. At least 5 required.");
+        }
+
         // Select questions using spaced repetition
         List<String> questionIds = questionSelectionService.selectQuestions(
                 userId, request.productCode(), request.domainCode(),

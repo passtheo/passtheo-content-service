@@ -188,6 +188,7 @@ class ReadinessServiceTest {
         when(strapiContentCache.getQuestionCount(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(30);
         when(progressRepository.countAttempted(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(25);
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(22);
+        when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(30);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
         when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
                 .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
@@ -236,6 +237,7 @@ class ReadinessServiceTest {
         when(strapiContentCache.getQuestionCount(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(totalQuestions);
         when(progressRepository.countAttempted(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(attempted);
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(correct);
+        when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(attempted);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(bestExam);
         when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
                 .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, passScore, null, null, true, false, null, null, false));

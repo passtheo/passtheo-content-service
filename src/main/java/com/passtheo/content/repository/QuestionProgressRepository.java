@@ -260,6 +260,17 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
     int countCorrect(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
 
     /**
+     * Sums total answer attempts by a user for a product (across all questions).
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return sum of all attempts
+     */
+    @Query("SELECT COALESCE(SUM(qp.totalAttempts), 0) FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
+           "AND qp.productCode = :productCode")
+    int countTotalAttempts(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
+
+    /**
      * Counts questions at each mastery level.
      *
      * @param keycloakUserId the user's Keycloak ID
