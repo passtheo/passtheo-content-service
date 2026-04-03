@@ -15,7 +15,6 @@ import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
-import com.passtheo.content.domain.entity.DomainProgress;
 import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.DomainSummaryDto;
@@ -26,7 +25,6 @@ import com.passtheo.content.dto.response.SessionSummaryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
@@ -68,7 +66,6 @@ public class PracticeSessionService {
     private final StudySessionRepository sessionRepository;
     private final SessionAnswerRepository answerRepository;
     private final QuestionProgressRepository progressRepository;
-    private final DomainProgressRepository domainProgressRepository;
     private final QuestionSelectionService questionSelectionService;
     private final AnswerProcessingService answerProcessingService;
     private final StreakService streakService;
@@ -83,7 +80,6 @@ public class PracticeSessionService {
      * @param sessionRepository        study session repository
      * @param answerRepository         session answer repository
      * @param progressRepository       question progress repository
-     * @param domainProgressRepository domain progress repository
      * @param questionSelectionService question selection (spaced repetition)
      * @param answerProcessingService  answer grading + mastery update
      * @param streakService            streak management
@@ -95,7 +91,6 @@ public class PracticeSessionService {
     public PracticeSessionService(StudySessionRepository sessionRepository,
                                   SessionAnswerRepository answerRepository,
                                   QuestionProgressRepository progressRepository,
-                                  DomainProgressRepository domainProgressRepository,
                                   QuestionSelectionService questionSelectionService,
                                   AnswerProcessingService answerProcessingService,
                                   StreakService streakService,
@@ -106,7 +101,6 @@ public class PracticeSessionService {
         this.sessionRepository = sessionRepository;
         this.answerRepository = answerRepository;
         this.progressRepository = progressRepository;
-        this.domainProgressRepository = domainProgressRepository;
         this.questionSelectionService = questionSelectionService;
         this.answerProcessingService = answerProcessingService;
         this.streakService = streakService;
@@ -226,10 +220,17 @@ public class PracticeSessionService {
         QuestionProgress progress = progressRepository
                 .findByKeycloakUserIdAndStrapiQuestionId(userId, request.strapiQuestionId())
                 .orElseGet(() -> {
+                    // Strapi does not set domain directly on questions — resolve from topic cache.
+                    String resolvedDomain = question.domain() != null ? question.domain().code() : null;
+                    if ((resolvedDomain == null || resolvedDomain.isBlank())
+                            && question.topic() != null && question.topic().code() != null) {
+                        resolvedDomain = strapiContentCache.getDomainCodeForTopic(
+                                question.topic().code(), session.getProductCode(), locale);
+                    }
                     QuestionProgress qp = new QuestionProgress(
                             userId, request.strapiQuestionId(),
                             session.getProductCode(),
-                            question.domain() != null ? question.domain().code() : "",
+                            resolvedDomain != null ? resolvedDomain : "",
                             question.topic() != null ? question.topic().code() : "");
                     qp.setTenantId(TenantContext.get());
                     return qp;
@@ -591,9 +592,11 @@ public class PracticeSessionService {
 
         List<StrapiDomainDto> domains = strapiContentCache.getDomains(productCode, locale);
 
-        Map<String, DomainProgress> progressMap = userId != null
-                ? domainProgressRepository.findByKeycloakUserIdAndProductCode(userId, productCode).stream()
-                        .collect(java.util.stream.Collectors.toMap(DomainProgress::getDomainCode, dp -> dp))
+        // Aggregate mastery stats from question_progress — domain_progress table is never populated
+        Map<String, QuestionProgressRepository.DomainMasteryProjection> progressMap = userId != null
+                ? progressRepository.aggregateByDomain(userId, productCode).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                QuestionProgressRepository.DomainMasteryProjection::getDomainCode, p -> p))
                 : Map.of();
 
         return domains.stream()
@@ -602,18 +605,17 @@ public class PracticeSessionService {
                 .map(d -> {
                     int totalQuestions = strapiContentCache.getQuestionCountByDomain(d.code(), locale);
                     boolean isLocked = !access.isPaid() && !d.isFreePreview();
-                    DomainProgress dp = progressMap.get(d.code());
+                    QuestionProgressRepository.DomainMasteryProjection agg = progressMap.get(d.code());
 
                     int masteredCount = 0;
                     int learningCount = 0;
                     int newCount = totalQuestions;
                     double masteryPercent = 0.0;
 
-                    if (dp != null) {
-                        masteredCount = dp.getMasteredCount();
-                        int attemptedCount = dp.getAttemptedCount();
-                        learningCount = Math.max(0, attemptedCount - masteredCount);
-                        newCount = Math.max(0, totalQuestions - attemptedCount);
+                    if (agg != null) {
+                        masteredCount = (int) agg.getMasteredCount();
+                        learningCount = (int) agg.getLearningCount();
+                        newCount = Math.max(0, totalQuestions - masteredCount - learningCount);
                         masteryPercent = totalQuestions > 0
                                 ? (double) masteredCount / totalQuestions * 100.0 : 0.0;
                     }

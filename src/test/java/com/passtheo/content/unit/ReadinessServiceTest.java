@@ -5,8 +5,8 @@ import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.service.ReadinessService;
@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -35,7 +36,6 @@ import static org.mockito.Mockito.when;
 class ReadinessServiceTest {
 
     @Mock private QuestionProgressRepository progressRepository;
-    @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private ExamAttemptRepository examAttemptRepository;
     @Mock private StrapiContentCache strapiContentCache;
     @Mock private UserServiceInternalClient userServiceClient;
@@ -51,8 +51,7 @@ class ReadinessServiceTest {
     void setUp() {
         TenantContext.set(TENANT_ID);
         org.mockito.Mockito.lenient().when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
-        service = new ReadinessService(progressRepository, domainProgressRepository,
-                examAttemptRepository, strapiContentCache, userServiceClient);
+        service = new ReadinessService(progressRepository, examAttemptRepository, strapiContentCache, userServiceClient);
     }
 
     @AfterEach
@@ -166,31 +165,68 @@ class ReadinessServiceTest {
         assertThat(result.questionsAttempted()).isEqualTo(100);
     }
 
+    @Test
+    void calculate_domainStrengths_computedFromQuestionProgress() {
+        // Domain "verkeersborden": 30 total questions, 25 attempted, 22 correct, 5 mastered
+        StrapiDomainDto domain = new StrapiDomainDto(
+                1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
+                "desc", null, "#E63946", 30, true, true, 1);
+
+        QuestionProgressRepository.DomainMasteryProjection agg = mock(
+                QuestionProgressRepository.DomainMasteryProjection.class);
+        when(agg.getDomainCode()).thenReturn("verkeersborden");
+        when(agg.getAttemptedCount()).thenReturn(25L);
+        when(agg.getCorrectCount()).thenReturn(22L);
+        when(agg.getTotalAttempts()).thenReturn(30L);
+
+        when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE)))
+                .thenReturn(List.of(agg));
+        when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE)))
+                .thenReturn(List.of(domain));
+        when(strapiContentCache.getQuestionCountByDomain(eq("verkeersborden"), eq(LOCALE)))
+                .thenReturn(30);
+        when(strapiContentCache.getQuestionCount(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(30);
+        when(progressRepository.countAttempted(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(25);
+        when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(22);
+        when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
+                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.domainStrengths()).hasSize(1);
+        ReadinessScore.DomainStrengthValue dsv = result.domainStrengths().get(0);
+        assertThat(dsv.domainCode()).isEqualTo("verkeersborden");
+        // accuracy = 22/30*100 ≈ 73.3%, coverage = 25/30*100 ≈ 83.3% → STRONG
+        assertThat(dsv.strength()).isEqualTo(DomainStrength.STRONG.name());
+    }
+
     // ─── DOMAIN STRENGTH CLASSIFICATION ───
 
     @Test
     void classifyDomainStrength_belowFiftyAccuracy_isWeak() {
-        assertThat(service.classifyDomainStrength(45.0, 80.0)).isEqualTo(DomainStrength.WEAK);
+        assertThat(ReadinessService.classifyDomainStrength(45.0, 80.0)).isEqualTo(DomainStrength.WEAK);
     }
 
     @Test
     void classifyDomainStrength_fiftyToSeventy_isModerate() {
-        assertThat(service.classifyDomainStrength(65.0, 50.0)).isEqualTo(DomainStrength.MODERATE);
+        assertThat(ReadinessService.classifyDomainStrength(65.0, 50.0)).isEqualTo(DomainStrength.MODERATE);
     }
 
     @Test
     void classifyDomainStrength_aboveEightyFiveWithHighCoverage_isMastered() {
-        assertThat(service.classifyDomainStrength(90.0, 85.0)).isEqualTo(DomainStrength.MASTERED);
+        assertThat(ReadinessService.classifyDomainStrength(90.0, 85.0)).isEqualTo(DomainStrength.MASTERED);
     }
 
     @Test
     void classifyDomainStrength_seventyToEightyFiveWithGoodCoverage_isStrong() {
-        assertThat(service.classifyDomainStrength(78.0, 65.0)).isEqualTo(DomainStrength.STRONG);
+        assertThat(ReadinessService.classifyDomainStrength(78.0, 65.0)).isEqualTo(DomainStrength.STRONG);
     }
 
     @Test
     void classifyDomainStrength_highAccuracyLowCoverage_isModerate() {
-        assertThat(service.classifyDomainStrength(88.0, 30.0)).isEqualTo(DomainStrength.MODERATE);
+        assertThat(ReadinessService.classifyDomainStrength(88.0, 30.0)).isEqualTo(DomainStrength.MODERATE);
     }
 
     // ─── HELPERS ───
@@ -203,8 +239,7 @@ class ReadinessServiceTest {
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(bestExam);
         when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
                 .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, passScore, null, null, true, false, null, null, false));
-        when(domainProgressRepository.findByKeycloakUserIdAndProductCode(eq(USER_ID), eq(PRODUCT_CODE)))
-                .thenReturn(List.of());
+        when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(List.of());
         when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());
     }
 }

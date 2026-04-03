@@ -9,7 +9,6 @@ import com.passtheo.shared.outbox.entity.OutboxStatus;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiAchievementDefDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.EarnedAchievementRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
@@ -41,37 +40,36 @@ public class AchievementService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    /** Default locale used when computing domain mastery (content-agnostic — counts don't differ by locale). */
+    private static final String DEFAULT_LOCALE = "nl";
+
     private final EarnedAchievementRepository achievementRepository;
     private final QuestionProgressRepository progressRepository;
     private final StreakRepository streakRepository;
     private final ExamAttemptRepository examAttemptRepository;
-    private final DomainProgressRepository domainProgressRepository;
     private final StrapiContentCache strapiContentCache;
     private final OutboxEventRepository outboxEventRepository;
 
     /**
      * Constructs the achievement service.
      *
-     * @param achievementRepository    earned achievement repository
-     * @param progressRepository       question progress repository
-     * @param streakRepository         streak repository
-     * @param examAttemptRepository    exam attempt repository
-     * @param domainProgressRepository domain progress repository
-     * @param strapiContentCache       Strapi content cache
-     * @param outboxEventRepository    outbox event repository
+     * @param achievementRepository earned achievement repository
+     * @param progressRepository    question progress repository
+     * @param streakRepository      streak repository
+     * @param examAttemptRepository exam attempt repository
+     * @param strapiContentCache    Strapi content cache
+     * @param outboxEventRepository outbox event repository
      */
     public AchievementService(EarnedAchievementRepository achievementRepository,
                               QuestionProgressRepository progressRepository,
                               StreakRepository streakRepository,
                               ExamAttemptRepository examAttemptRepository,
-                              DomainProgressRepository domainProgressRepository,
                               StrapiContentCache strapiContentCache,
                               OutboxEventRepository outboxEventRepository) {
         this.achievementRepository = achievementRepository;
         this.progressRepository = progressRepository;
         this.streakRepository = streakRepository;
         this.examAttemptRepository = examAttemptRepository;
-        this.domainProgressRepository = domainProgressRepository;
         this.strapiContentCache = strapiContentCache;
         this.outboxEventRepository = outboxEventRepository;
     }
@@ -152,8 +150,16 @@ public class AchievementService {
             case "exams_passed" -> (int) examAttemptRepository
                     .countByKeycloakUserIdAndProductCodeAndPassedTrue(userId, productCode);
             case "perfect_exam" -> (int) examAttemptRepository.countPerfect(userId, productCode);
-            case "domain_mastered" -> (int) domainProgressRepository
-                    .countByKeycloakUserIdAndProductCodeAndStrength(userId, productCode, DomainStrength.MASTERED);
+            case "domain_mastered" -> (int) progressRepository.aggregateByDomain(userId, productCode).stream()
+                    .filter(agg -> {
+                        int total = strapiContentCache.getQuestionCountByDomain(agg.getDomainCode(), DEFAULT_LOCALE);
+                        double accuracy = agg.getTotalAttempts() > 0
+                                ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                        double coverage = total > 0
+                                ? (double) agg.getAttemptedCount() / total * 100.0 : 0.0;
+                        return ReadinessService.classifyDomainStrength(accuracy, coverage) == DomainStrength.MASTERED;
+                    })
+                    .count();
             case "readiness_score" -> 0; // calculated separately to avoid circular dependency
             case "fast_correct" -> 0; // tracked inline during answer processing
             default -> {

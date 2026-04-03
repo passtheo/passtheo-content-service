@@ -7,7 +7,6 @@ import com.passtheo.content.dto.response.MasteryStatsDto;
 import com.passtheo.content.dto.response.ReadinessSnapshotDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.ReadinessSnapshotRepository;
 import com.passtheo.content.service.ProgressService;
@@ -34,7 +33,6 @@ import static org.mockito.Mockito.when;
 class ProgressServiceTest {
 
     @Mock private QuestionProgressRepository progressRepository;
-    @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private ReadinessSnapshotRepository snapshotRepository;
     @Mock private StrapiContentCache strapiContentCache;
 
@@ -46,16 +44,13 @@ class ProgressServiceTest {
 
     @BeforeEach
     void setUp() {
-        progressService = new ProgressService(
-                progressRepository, domainProgressRepository, snapshotRepository, strapiContentCache);
+        progressService = new ProgressService(progressRepository, snapshotRepository, strapiContentCache);
     }
 
     @Test
     void getDomainProgress_returns_empty_for_new_user() {
-        when(domainProgressRepository.findByKeycloakUserIdAndProductCode(USER_ID, PRODUCT))
-                .thenReturn(List.of());
-        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE)))
-                .thenReturn(List.of());
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of());
+        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE))).thenReturn(List.of());
 
         List<DomainProgressDto> result = progressService.getDomainProgress(USER_ID, PRODUCT, LOCALE);
 
@@ -63,38 +58,50 @@ class ProgressServiceTest {
     }
 
     @Test
-    void getDomainProgress_maps_domain_names_from_strapi() {
-        com.passtheo.content.domain.entity.DomainProgress dp =
-                buildDomainProgress("verkeersborden", 50, 25, 20, 5, 80.0, 50.0, DomainStrength.STRONG);
-        when(domainProgressRepository.findByKeycloakUserIdAndProductCode(USER_ID, PRODUCT))
-                .thenReturn(List.of(dp));
-        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE)))
-                .thenReturn(List.of(new StrapiDomainDto(
-                        1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
-                        "desc", null, "#E63946", 50, true, true, 1)));
+    void getDomainProgress_computes_stats_from_question_progress() {
+        StrapiDomainDto domain = new StrapiDomainDto(
+                1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
+                "desc", null, "#E63946", 30, true, true, 1);
+
+        QuestionProgressRepository.DomainMasteryProjection agg = buildProjection(
+                "verkeersborden", 25L, 22L, 30L, 5L);
+
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of(agg));
+        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE))).thenReturn(List.of(domain));
+        when(strapiContentCache.getQuestionCountByDomain(eq("verkeersborden"), eq(LOCALE))).thenReturn(30);
 
         List<DomainProgressDto> result = progressService.getDomainProgress(USER_ID, PRODUCT, LOCALE);
 
         assertEquals(1, result.size());
-        assertEquals("verkeersborden", result.get(0).domainCode());
-        assertEquals("Verkeersborden", result.get(0).domainName());
-        assertEquals(50, result.get(0).totalQuestions());
-        assertEquals(25, result.get(0).attemptedCount());
-        assertEquals(80.0, result.get(0).accuracyPercent(), 0.01);
+        DomainProgressDto dto = result.get(0);
+        assertEquals("verkeersborden", dto.domainCode());
+        assertEquals("Verkeersborden", dto.domainName());
+        assertEquals(30, dto.totalQuestions());
+        assertEquals(25, dto.attemptedCount());
+        assertEquals(5, dto.masteredCount());
+        // accuracy = 22/30*100 ≈ 73.3%
+        assertEquals(73.3, dto.accuracyPercent(), 0.1);
+        // coverage = 25/30*100 ≈ 83.3%
+        assertEquals(83.3, dto.coveragePercent(), 0.1);
+        // accuracy 73.3% >= 70%, coverage 83.3% >= 60% → STRONG
+        assertEquals(DomainStrength.STRONG.name(), dto.strength());
     }
 
     @Test
-    void getDomainProgress_uses_domain_code_as_fallback_name() {
-        com.passtheo.content.domain.entity.DomainProgress dp =
-                buildDomainProgress("unknown-domain", 10, 5, 4, 1, 80.0, 50.0, DomainStrength.MODERATE);
-        when(domainProgressRepository.findByKeycloakUserIdAndProductCode(USER_ID, PRODUCT))
-                .thenReturn(List.of(dp));
-        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE)))
-                .thenReturn(List.of());
+    void getDomainProgress_returns_unknown_strength_for_domain_with_no_progress() {
+        StrapiDomainDto domain = new StrapiDomainDto(
+                1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
+                "desc", null, "#E63946", 30, true, true, 1);
+
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of());
+        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE))).thenReturn(List.of(domain));
+        when(strapiContentCache.getQuestionCountByDomain(eq("verkeersborden"), eq(LOCALE))).thenReturn(30);
 
         List<DomainProgressDto> result = progressService.getDomainProgress(USER_ID, PRODUCT, LOCALE);
 
-        assertEquals("unknown-domain", result.get(0).domainName());
+        assertEquals(1, result.size());
+        assertEquals(0, result.get(0).attemptedCount());
+        assertEquals(DomainStrength.UNKNOWN.name(), result.get(0).strength());
     }
 
     @Test
@@ -177,20 +184,16 @@ class ProgressServiceTest {
 
     // ─── Helpers ───
 
-    private com.passtheo.content.domain.entity.DomainProgress buildDomainProgress(
-            String domainCode, int total, int attempted, int correct, int mastered,
-            double accuracy, double coverage, DomainStrength strength) {
-        com.passtheo.content.domain.entity.DomainProgress dp =
-                mock(com.passtheo.content.domain.entity.DomainProgress.class);
-        when(dp.getDomainCode()).thenReturn(domainCode);
-        when(dp.getTotalQuestions()).thenReturn(total);
-        when(dp.getAttemptedCount()).thenReturn(attempted);
-        when(dp.getCorrectCount()).thenReturn(correct);
-        when(dp.getMasteredCount()).thenReturn(mastered);
-        when(dp.getAccuracyPercent()).thenReturn(BigDecimal.valueOf(accuracy));
-        when(dp.getCoveragePercent()).thenReturn(BigDecimal.valueOf(coverage));
-        when(dp.getStrength()).thenReturn(strength);
-        return dp;
+    private QuestionProgressRepository.DomainMasteryProjection buildProjection(
+            String domainCode, long attempted, long correct, long totalAttempts, long mastered) {
+        QuestionProgressRepository.DomainMasteryProjection p =
+                mock(QuestionProgressRepository.DomainMasteryProjection.class);
+        when(p.getDomainCode()).thenReturn(domainCode);
+        when(p.getAttemptedCount()).thenReturn(attempted);
+        when(p.getCorrectCount()).thenReturn(correct);
+        when(p.getTotalAttempts()).thenReturn(totalAttempts);
+        when(p.getMasteredCount()).thenReturn(mastered);
+        return p;
     }
 
     private com.passtheo.content.domain.entity.ReadinessSnapshot buildReadinessSnapshot(

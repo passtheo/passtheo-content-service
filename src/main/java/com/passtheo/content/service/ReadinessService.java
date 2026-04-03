@@ -1,14 +1,12 @@
 package com.passtheo.content.service;
 
 import com.passtheo.shared.core.client.UserServiceInternalClient;
-import com.passtheo.content.domain.entity.DomainProgress;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.shared.core.context.TenantContext;
@@ -53,7 +51,6 @@ public class ReadinessService {
     private static final double DAILY_PROGRESS_ESTIMATE = 0.5;
 
     private final QuestionProgressRepository progressRepository;
-    private final DomainProgressRepository domainProgressRepository;
     private final ExamAttemptRepository examAttemptRepository;
     private final StrapiContentCache strapiContentCache;
     private final UserServiceInternalClient userServiceClient;
@@ -61,19 +58,16 @@ public class ReadinessService {
     /**
      * Constructs the readiness service.
      *
-     * @param progressRepository       question progress repository
-     * @param domainProgressRepository domain progress repository
-     * @param examAttemptRepository    exam attempt repository
-     * @param strapiContentCache       Strapi content cache
-     * @param userServiceClient        user-service client for exam date
+     * @param progressRepository    question progress repository
+     * @param examAttemptRepository exam attempt repository
+     * @param strapiContentCache    Strapi content cache
+     * @param userServiceClient     user-service client for exam date
      */
     public ReadinessService(QuestionProgressRepository progressRepository,
-                            DomainProgressRepository domainProgressRepository,
                             ExamAttemptRepository examAttemptRepository,
                             StrapiContentCache strapiContentCache,
                             UserServiceInternalClient userServiceClient) {
         this.progressRepository = progressRepository;
-        this.domainProgressRepository = domainProgressRepository;
         this.examAttemptRepository = examAttemptRepository;
         this.strapiContentCache = strapiContentCache;
         this.userServiceClient = userServiceClient;
@@ -116,21 +110,35 @@ public class ReadinessService {
 
         ReadinessLabel label = classifyReadiness(readiness);
 
-        // Per-domain breakdown
-        List<DomainProgress> domainProgressList = domainProgressRepository
-                .findByKeycloakUserIdAndProductCode(userId, productCode);
+        // Per-domain breakdown — computed directly from question_progress (domain_progress is never populated)
+        Map<String, QuestionProgressRepository.DomainMasteryProjection> domainAggregates =
+                progressRepository.aggregateByDomain(userId, productCode).stream()
+                        .collect(Collectors.toMap(
+                                QuestionProgressRepository.DomainMasteryProjection::getDomainCode,
+                                p -> p));
 
-        Map<String, String> domainNames = strapiContentCache.getDomains(productCode, locale).stream()
-                .collect(Collectors.toMap(StrapiDomainDto::code, StrapiDomainDto::name));
+        Map<String, StrapiDomainDto> strapiDomains = strapiContentCache.getDomains(productCode, locale).stream()
+                .collect(Collectors.toMap(StrapiDomainDto::code, d -> d));
 
-        List<ReadinessScore.DomainStrengthValue> domainStrengths = domainProgressList.stream()
-                .map(dp -> new ReadinessScore.DomainStrengthValue(
-                        dp.getDomainCode(),
-                        domainNames.getOrDefault(dp.getDomainCode(), dp.getDomainCode()),
-                        dp.getAccuracyPercent() != null ? dp.getAccuracyPercent().doubleValue() : 0.0,
-                        dp.getCoveragePercent() != null ? dp.getCoveragePercent().doubleValue() : 0.0,
-                        dp.getStrength() != null ? dp.getStrength().name() : DomainStrength.UNKNOWN.name()
-                ))
+        List<ReadinessScore.DomainStrengthValue> domainStrengths = strapiDomains.entrySet().stream()
+                .filter(e -> e.getValue().isActive())
+                .map(e -> {
+                    String code = e.getKey();
+                    String name = e.getValue().name();
+                    QuestionProgressRepository.DomainMasteryProjection agg = domainAggregates.get(code);
+                    if (agg == null) {
+                        return new ReadinessScore.DomainStrengthValue(
+                                code, name, 0.0, 0.0, DomainStrength.UNKNOWN.name());
+                    }
+                    int domainTotal = strapiContentCache.getQuestionCountByDomain(code, locale);
+                    double domainAccuracy = agg.getTotalAttempts() > 0
+                            ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                    double domainCoverage = domainTotal > 0
+                            ? (double) agg.getAttemptedCount() / domainTotal * 100.0 : 0.0;
+                    DomainStrength strength = classifyDomainStrength(domainAccuracy, domainCoverage);
+                    return new ReadinessScore.DomainStrengthValue(
+                            code, name, domainAccuracy, domainCoverage, strength.name());
+                })
                 .toList();
 
         LOG.debug("Readiness calculated: user={}, product={}, score={}, label={}, coverage={}, accuracy={}, exam={}",
@@ -184,7 +192,7 @@ public class ReadinessService {
      * @param coverage coverage percentage
      * @return the domain strength
      */
-    public DomainStrength classifyDomainStrength(double accuracy, double coverage) {
+    public static DomainStrength classifyDomainStrength(double accuracy, double coverage) {
         if (accuracy < WEAK_ACCURACY_THRESHOLD) {
             return DomainStrength.WEAK;
         }
