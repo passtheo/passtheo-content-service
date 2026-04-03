@@ -1,11 +1,9 @@
 package com.passtheo.content.unit;
 
 import com.passtheo.content.domain.entity.EarnedAchievement;
-import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiAchievementDefDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.EarnedAchievementRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
@@ -29,6 +27,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,7 +39,6 @@ class AchievementServiceTest {
     @Mock private QuestionProgressRepository progressRepository;
     @Mock private StreakRepository streakRepository;
     @Mock private ExamAttemptRepository examAttemptRepository;
-    @Mock private DomainProgressRepository domainProgressRepository;
     @Mock private StrapiContentCache strapiContentCache;
     @Mock private OutboxEventRepository outboxEventRepository;
 
@@ -55,7 +53,7 @@ class AchievementServiceTest {
         TenantContext.set(TENANT_ID);
         achievementService = new AchievementService(
                 achievementRepository, progressRepository, streakRepository,
-                examAttemptRepository, domainProgressRepository, strapiContentCache, outboxEventRepository);
+                examAttemptRepository, strapiContentCache, outboxEventRepository);
     }
 
     @AfterEach
@@ -147,19 +145,54 @@ class AchievementServiceTest {
     }
 
     @Test
-    void domain_mastered_achievement_uses_domain_progress_repository() {
+    void domain_mastered_achievement_uses_question_progress_aggregation() {
+        // A domain where accuracy >= 85% AND coverage >= 80% qualifies as MASTERED strength
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 1, null, "Domeinmeester", "domain_mastered", "desc", "🎓", "🔒",
                 "domain_mastered", 1, 75, true, 1, null);
         when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
         when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
-        when(domainProgressRepository.countByKeycloakUserIdAndProductCodeAndStrength(
-                USER_ID, PRODUCT, DomainStrength.MASTERED)).thenReturn(2L);
+
+        // Domain with accuracy 90% and coverage 90% → MASTERED strength
+        QuestionProgressRepository.DomainMasteryProjection agg =
+                mock(QuestionProgressRepository.DomainMasteryProjection.class);
+        when(agg.getDomainCode()).thenReturn("verkeersborden");
+        when(agg.getAttemptedCount()).thenReturn(27L);   // 27/30 = 90% coverage
+        when(agg.getCorrectCount()).thenReturn(27L);
+        when(agg.getTotalAttempts()).thenReturn(30L);    // 27/30 = 90% accuracy
+
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of(agg));
+        when(strapiContentCache.getQuestionCountByDomain("verkeersborden", "nl")).thenReturn(30);
         when(achievementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         List<EarnedAchievementDto> result = achievementService.checkAchievements(USER_ID, PRODUCT);
 
         assertEquals(1, result.size());
+        assertEquals("domain_mastered", result.get(0).code());
+    }
+
+    @Test
+    void domain_mastered_achievement_not_earned_if_no_mastered_domains() {
+        StrapiAchievementDefDto def = new StrapiAchievementDefDto(
+                1, null, "Domeinmeester", "domain_mastered", "desc", "🎓", "🔒",
+                "domain_mastered", 1, 75, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
+        when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
+
+        // Domain with low coverage → not MASTERED
+        QuestionProgressRepository.DomainMasteryProjection agg =
+                mock(QuestionProgressRepository.DomainMasteryProjection.class);
+        when(agg.getDomainCode()).thenReturn("verkeersborden");
+        when(agg.getAttemptedCount()).thenReturn(10L);   // 10/30 = 33% coverage — too low
+        when(agg.getCorrectCount()).thenReturn(7L);
+        when(agg.getTotalAttempts()).thenReturn(15L);
+
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of(agg));
+        when(strapiContentCache.getQuestionCountByDomain("verkeersborden", "nl")).thenReturn(30);
+
+        List<EarnedAchievementDto> result = achievementService.checkAchievements(USER_ID, PRODUCT);
+
+        assertTrue(result.isEmpty());
     }
 
     @Test

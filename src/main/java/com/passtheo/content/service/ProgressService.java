@@ -1,6 +1,5 @@
 package com.passtheo.content.service;
 
-import com.passtheo.content.domain.entity.DomainProgress;
 import com.passtheo.content.domain.entity.ReadinessSnapshot;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.MasteryLevel;
@@ -9,7 +8,6 @@ import com.passtheo.content.dto.response.MasteryStatsDto;
 import com.passtheo.content.dto.response.ReadinessSnapshotDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
-import com.passtheo.content.repository.DomainProgressRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.ReadinessSnapshotRepository;
 import jakarta.annotation.Nonnull;
@@ -33,57 +31,64 @@ public class ProgressService {
     private static final Logger LOG = LoggerFactory.getLogger(ProgressService.class);
 
     private final QuestionProgressRepository progressRepository;
-    private final DomainProgressRepository domainProgressRepository;
     private final ReadinessSnapshotRepository snapshotRepository;
     private final StrapiContentCache strapiContentCache;
 
     /**
      * Constructs the progress service.
      *
-     * @param progressRepository       question progress repository
-     * @param domainProgressRepository domain progress repository
-     * @param snapshotRepository       readiness snapshot repository
-     * @param strapiContentCache       Strapi content cache
+     * @param progressRepository question progress repository
+     * @param snapshotRepository readiness snapshot repository
+     * @param strapiContentCache Strapi content cache
      */
     public ProgressService(QuestionProgressRepository progressRepository,
-                           DomainProgressRepository domainProgressRepository,
                            ReadinessSnapshotRepository snapshotRepository,
                            StrapiContentCache strapiContentCache) {
         this.progressRepository = progressRepository;
-        this.domainProgressRepository = domainProgressRepository;
         this.snapshotRepository = snapshotRepository;
         this.strapiContentCache = strapiContentCache;
     }
 
     /**
      * Gets domain progress breakdown for a user/product.
+     * Stats are computed on-the-fly from question_progress (domain_progress is never populated).
      *
      * @param userId      the user's Keycloak ID
      * @param productCode the product code
      * @param locale      content locale
-     * @return list of domain progress DTOs
+     * @return list of domain progress DTOs (one per active domain, including unstarted)
      */
     @Transactional(readOnly = true)
     public List<DomainProgressDto> getDomainProgress(@Nonnull UUID userId, @Nonnull String productCode,
                                                       @Nonnull String locale) {
-        List<DomainProgress> progressList = domainProgressRepository
-                .findByKeycloakUserIdAndProductCode(userId, productCode);
+        Map<String, QuestionProgressRepository.DomainMasteryProjection> aggregates =
+                progressRepository.aggregateByDomain(userId, productCode).stream()
+                        .collect(Collectors.toMap(
+                                QuestionProgressRepository.DomainMasteryProjection::getDomainCode,
+                                p -> p));
 
-        Map<String, String> domainNames = strapiContentCache.getDomains(productCode, locale).stream()
-                .collect(Collectors.toMap(StrapiDomainDto::code, StrapiDomainDto::name));
-
-        return progressList.stream()
-                .map(dp -> new DomainProgressDto(
-                        dp.getDomainCode(),
-                        domainNames.getOrDefault(dp.getDomainCode(), dp.getDomainCode()),
-                        dp.getTotalQuestions(),
-                        dp.getAttemptedCount(),
-                        dp.getCorrectCount(),
-                        dp.getMasteredCount(),
-                        dp.getAccuracyPercent() != null ? dp.getAccuracyPercent().doubleValue() : 0.0,
-                        dp.getCoveragePercent() != null ? dp.getCoveragePercent().doubleValue() : 0.0,
-                        dp.getStrength() != null ? dp.getStrength().name() : DomainStrength.UNKNOWN.name()
-                ))
+        return strapiContentCache.getDomains(productCode, locale).stream()
+                .filter(StrapiDomainDto::isActive)
+                .map(d -> {
+                    QuestionProgressRepository.DomainMasteryProjection agg = aggregates.get(d.code());
+                    int totalQuestions = strapiContentCache.getQuestionCountByDomain(d.code(), locale);
+                    if (agg == null) {
+                        return new DomainProgressDto(
+                                d.code(), d.name(), totalQuestions, 0, 0, 0,
+                                0.0, 0.0, DomainStrength.UNKNOWN.name());
+                    }
+                    double accuracy = agg.getTotalAttempts() > 0
+                            ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                    double coverage = totalQuestions > 0
+                            ? (double) agg.getAttemptedCount() / totalQuestions * 100.0 : 0.0;
+                    DomainStrength strength = ReadinessService.classifyDomainStrength(accuracy, coverage);
+                    return new DomainProgressDto(
+                            d.code(), d.name(), totalQuestions,
+                            (int) agg.getAttemptedCount(),
+                            (int) agg.getCorrectCount(),
+                            (int) agg.getMasteredCount(),
+                            accuracy, coverage, strength.name());
+                })
                 .toList();
     }
 

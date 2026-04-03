@@ -22,6 +22,72 @@ import org.springframework.data.domain.Pageable;
 public interface QuestionProgressRepository extends JpaRepository<QuestionProgress, UUID> {
 
     /**
+     * Per-domain mastery aggregate computed directly from question_progress rows.
+     * Used instead of the (never-populated) domain_progress table.
+     */
+    interface DomainMasteryProjection {
+        /**
+         * Returns the domain code.
+         *
+         * @return domain code (e.g. "verkeersborden")
+         */
+        String getDomainCode();
+
+        /**
+         * Returns the number of distinct questions answered at least once.
+         *
+         * @return attempted question count
+         */
+        long getAttemptedCount();
+
+        /**
+         * Returns the sum of totalCorrect across all answered questions in this domain.
+         *
+         * @return total correct answers
+         */
+        long getCorrectCount();
+
+        /**
+         * Returns the sum of totalAttempts across all answered questions (denominator for accuracy).
+         *
+         * @return total answer attempts
+         */
+        long getTotalAttempts();
+
+        /**
+         * Returns the number of questions at MASTERED level.
+         *
+         * @return mastered question count
+         */
+        long getMasteredCount();
+
+        /**
+         * Returns the number of questions at LEARNING or FAMILIAR level.
+         *
+         * @return learning question count
+         */
+        long getLearningCount();
+    }
+
+    /**
+     * Returns domain-level mastery aggregates for a user/product in a single query.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @return one projection per domain the user has touched
+     */
+    @Query("SELECT qp.domainCode AS domainCode, " +
+           "COUNT(qp) AS attemptedCount, " +
+           "SUM(qp.totalCorrect) AS correctCount, " +
+           "SUM(qp.totalAttempts) AS totalAttempts, " +
+           "SUM(CASE WHEN qp.masteryLevel = 'MASTERED' THEN 1 ELSE 0 END) AS masteredCount, " +
+           "SUM(CASE WHEN qp.masteryLevel IN ('LEARNING', 'FAMILIAR') THEN 1 ELSE 0 END) AS learningCount " +
+           "FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
+           "AND qp.productCode = :productCode GROUP BY qp.domainCode")
+    List<DomainMasteryProjection> aggregateByDomain(@Param("userId") UUID userId,
+                                                     @Param("productCode") String productCode);
+
+    /**
      * Finds a progress record by user and question.
      *
      * @param keycloakUserId   the user's Keycloak ID
