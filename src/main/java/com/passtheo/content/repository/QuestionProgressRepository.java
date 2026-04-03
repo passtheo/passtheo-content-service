@@ -89,6 +89,68 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
                                                      @Nonnull @Param("productCode") String productCode);
 
     /**
+     * Per-topic mastery aggregate computed directly from question_progress rows.
+     * Used instead of the (never-populated) topic_progress table.
+     */
+    interface TopicMasteryProjection {
+        /**
+         * Returns the topic code.
+         *
+         * @return topic code (e.g. "verbodsborden")
+         */
+        String getTopicCode();
+
+        /**
+         * Returns the number of distinct questions answered at least once.
+         *
+         * @return attempted question count
+         */
+        long getAttemptedCount();
+
+        /**
+         * Returns the sum of totalCorrect across all answered questions in this topic.
+         *
+         * @return total correct answers
+         */
+        long getCorrectCount();
+
+        /**
+         * Returns the sum of totalAttempts across all answered questions (denominator for accuracy).
+         *
+         * @return total answer attempts
+         */
+        long getTotalAttempts();
+
+        /**
+         * Returns the number of questions at MASTERED level.
+         *
+         * @return mastered question count
+         */
+        long getMasteredCount();
+    }
+
+    /**
+     * Returns topic-level mastery aggregates for a user/product/domain in a single query.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param domainCode  the domain code
+     * @return one projection per topic the user has touched within the domain
+     */
+    @Query("SELECT qp.topicCode AS topicCode, " +
+           "COUNT(qp) AS attemptedCount, " +
+           "SUM(qp.totalCorrect) AS correctCount, " +
+           "SUM(qp.totalAttempts) AS totalAttempts, " +
+           "SUM(CASE WHEN qp.masteryLevel = 'MASTERED' THEN 1 ELSE 0 END) AS masteredCount " +
+           "FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
+           "AND qp.productCode = :productCode AND qp.domainCode = :domainCode " +
+           "AND qp.topicCode <> '' " +
+           "GROUP BY qp.topicCode")
+    List<TopicMasteryProjection> aggregateByTopic(@Nonnull @Param("userId") UUID userId,
+                                                   @Nonnull @Param("productCode") String productCode,
+                                                   @Nonnull @Param("domainCode") String domainCode);
+
+    /**
      * Finds a progress record by user and question.
      *
      * @param keycloakUserId   the user's Keycloak ID

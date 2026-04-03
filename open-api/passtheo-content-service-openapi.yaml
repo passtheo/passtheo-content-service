@@ -1504,7 +1504,7 @@ components:
         questionCount: { type: integer }
         progress:
           type: object
-          nullable: true
+          description: Topic progress overlay (always present, defaults to zeros for untouched topics)
           properties:
             coveragePercent: { type: number }
             accuracyPercent: { type: number }

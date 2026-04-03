@@ -62,13 +62,15 @@ Feature: Content Hierarchy Browsing
     * def lockedDomains = karate.filter(response.data, function(d){ return d.isLocked == true })
     And match lockedDomains == '#[5]'
 
-  Scenario: List topics for a domain
+  Scenario: List topics for a domain with progress overlay
     Given path '/api/content/NL/cbr/auto-b/domains/verkeersborden/topics'
     And headers paidHeaders
     When method GET
     Then status 200
     And match response.data == '#[2]'
-    And match each response.data contains { code: '#string', name: '#string' }
+    And match each response.data contains { code: '#string', name: '#string', questionCount: '#number' }
+    And match each response.data contains { progress: '#notnull' }
+    And match each response.data.progress contains { coveragePercent: '#number', accuracyPercent: '#number', masteredCount: '#number' }
 
   Scenario: List road signs for Netherlands
     Given path '/api/content/NL/cbr/auto-b/road-signs'
