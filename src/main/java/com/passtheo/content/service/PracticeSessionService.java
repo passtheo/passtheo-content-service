@@ -220,10 +220,17 @@ public class PracticeSessionService {
         QuestionProgress progress = progressRepository
                 .findByKeycloakUserIdAndStrapiQuestionId(userId, request.strapiQuestionId())
                 .orElseGet(() -> {
+                    // Strapi does not set domain directly on questions — resolve from topic cache.
+                    String resolvedDomain = question.domain() != null ? question.domain().code() : null;
+                    if ((resolvedDomain == null || resolvedDomain.isBlank())
+                            && question.topic() != null && question.topic().code() != null) {
+                        resolvedDomain = strapiContentCache.getDomainCodeForTopic(
+                                question.topic().code(), session.getProductCode(), locale);
+                    }
                     QuestionProgress qp = new QuestionProgress(
                             userId, request.strapiQuestionId(),
                             session.getProductCode(),
-                            question.domain() != null ? question.domain().code() : "",
+                            resolvedDomain != null ? resolvedDomain : "",
                             question.topic() != null ? question.topic().code() : "");
                     qp.setTenantId(TenantContext.get());
                     return qp;

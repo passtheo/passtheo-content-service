@@ -329,6 +329,28 @@ public class StrapiContentCache {
     }
 
     /**
+     * Resolves the domain code for a given topic code by iterating the cached domain/topic tree.
+     * Used when a question's domain relation is null (Strapi does not set domain directly on questions).
+     *
+     * @param topicCode   the topic code
+     * @param productCode the product code
+     * @param locale      the content locale
+     * @return the domain code, or null if not found
+     */
+    public String getDomainCodeForTopic(@Nonnull String topicCode,
+                                        @Nonnull String productCode,
+                                        @Nonnull String locale) {
+        for (StrapiDomainDto domain : getDomains(productCode, locale)) {
+            List<StrapiTopicDto> topics = getTopics(domain.code(), locale);
+            if (topics.stream().anyMatch(t -> topicCode.equals(t.code()))) {
+                return domain.code();
+            }
+        }
+        LOG.warn("Could not resolve domain for topic={}, product={}, locale={}", topicCode, productCode, locale);
+        return null;
+    }
+
+    /**
      * Flushes all Strapi content cache entries.
      */
     public void flushAll() {
