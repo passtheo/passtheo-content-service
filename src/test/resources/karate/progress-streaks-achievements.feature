@@ -146,12 +146,15 @@ Feature: Progress, Readiness, Streaks, Achievements, and Study Plan
     When method GET
     Then status 200
     And match response.data == '#array'
+    # Check that all achievements have xpReward
+    * def first = response.data[0]
+    And match first.xpReward == '#number'
     # Check that earned achievements have earnedAt
     * def earned = karate.filter(response.data, function(a){ return a.isEarned == true })
-    * eval if (earned.length > 0) karate.match(earned[0], '{ earnedAt: "#string" }')
+    * eval if (earned.length > 0) karate.match(earned[0], '{ earnedAt: "#string", xpReward: "#number" }')
     # Check that locked achievements have progress
     * def locked = karate.filter(response.data, function(a){ return a.isEarned == false })
-    * eval if (locked.length > 0) karate.match(locked[0], '{ currentProgress: "#number", progressPercent: "#number" }')
+    * eval if (locked.length > 0) karate.match(locked[0], '{ currentProgress: "#number", progressPercent: "#number", xpReward: "#number" }')
 
   Scenario: Fresh user has zero achievements earned
     Given path '/api/achievements/me'

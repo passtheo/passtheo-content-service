@@ -1816,6 +1816,7 @@ components:
         triggerValue: { type: integer }
         currentProgress: { type: integer, description: "user's current value toward this trigger" }
         progressPercent: { type: number }
+        xpReward: { type: integer, description: "XP awarded when this achievement is earned" }
         productCode: { type: string, nullable: true, description: "null = platform-wide achievement" }
 
     EarnedAchievementDto:

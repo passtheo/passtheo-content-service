@@ -76,7 +76,7 @@ public class AchievementController {
                     isEarned ? def.icon() : def.lockedIcon(),
                     isEarned, isEarned ? earned.getEarnedAt() : null,
                     def.triggerType(), def.triggerValue(),
-                    currentProgress, progressPercent
+                    currentProgress, progressPercent, def.xpReward()
             );
         }).toList();
 

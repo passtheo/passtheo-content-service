@@ -15,5 +15,6 @@ public record AchievementDto(
     String triggerType,
     int triggerValue,
     int currentProgress,
-    double progressPercent
+    double progressPercent,
+    int xpReward
 ) {}
