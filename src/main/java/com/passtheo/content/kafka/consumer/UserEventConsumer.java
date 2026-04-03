@@ -16,6 +16,7 @@ import com.passtheo.content.service.StudyPlanService;
 import com.passtheo.shared.core.context.TenantContext;
 import jakarta.annotation.Nonnull;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -109,48 +110,121 @@ public class UserEventConsumer {
                 deleteAllUserData(userId);
 
             } else if ("UserOnboardingCompleted".equals(eventType)) {
-                String keycloakUserIdStr = payload.has("keycloakUserId")
-                        ? payload.get("keycloakUserId").asText(null) : null;
-                String tenantIdStr = payload.has("tenantId")
-                        ? payload.get("tenantId").asText(null) : null;
-                String productCode = payload.has("productCode")
-                        ? payload.get("productCode").asText(null) : null;
-                String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
-                        ? payload.get("examDate").asText(null) : null;
+                handleOnboardingCompleted(payload, record);
 
-                if (keycloakUserIdStr == null || tenantIdStr == null
-                        || productCode == null || productCode.isBlank()) {
-                    LOG.warn("Ignoring incomplete UserOnboardingCompleted event: offset={}", record.offset());
-                    ack.acknowledge();
-                    return;
-                }
+            } else if ("UserExamDateSet".equals(eventType)) {
+                handleExamDateSet(payload, record);
 
-                UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
-                UUID tenantId = UUID.fromString(tenantIdStr);
-                LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
-
-                boolean hasActivePlan = planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
-                        keycloakUserId, productCode, PlanStatus.ACTIVE).isPresent();
-
-                if (!hasActivePlan) {
-                    LOG.info("Auto-generating study plan: userId={}, productCode={}, examDate={}",
-                            keycloakUserId, productCode, examDate);
-                    TenantContext.set(tenantId);
-                    try {
-                        studyPlanService.generatePlan(keycloakUserId,
-                                new GenerateStudyPlanRequest(productCode, examDate, null), "nl");
-                    } finally {
-                        TenantContext.clear();
-                    }
-                } else {
-                    LOG.debug("Skipping auto-generate: active plan exists for userId={}, productCode={}",
-                            keycloakUserId, productCode);
-                }
+            } else if ("UserExamDateCleared".equals(eventType)) {
+                handleExamDateCleared(payload, record);
             }
 
             ack.acknowledge();
         } catch (Exception ex) {
             LOG.error("Failed to process user event: offset={}", record.offset(), ex);
+        }
+    }
+
+    private void handleOnboardingCompleted(JsonNode payload, ConsumerRecord<String, String> record) {
+        String keycloakUserIdStr = payload.has("keycloakUserId")
+                ? payload.get("keycloakUserId").asText(null) : null;
+        String tenantIdStr = payload.has("tenantId")
+                ? payload.get("tenantId").asText(null) : null;
+        String productCode = payload.has("productCode")
+                ? payload.get("productCode").asText(null) : null;
+        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
+                ? payload.get("examDate").asText(null) : null;
+
+        if (keycloakUserIdStr == null || tenantIdStr == null
+                || productCode == null || productCode.isBlank()) {
+            LOG.warn("Ignoring incomplete UserOnboardingCompleted event: offset={}", record.offset());
+            return;
+        }
+
+        UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
+        UUID tenantId = UUID.fromString(tenantIdStr);
+        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+
+        boolean hasActivePlan = planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+                keycloakUserId, productCode, PlanStatus.ACTIVE).isPresent();
+
+        if (!hasActivePlan) {
+            LOG.info("Auto-generating study plan: userId={}, productCode={}, examDate={}",
+                    keycloakUserId, productCode, examDate);
+            TenantContext.set(tenantId);
+            try {
+                studyPlanService.generatePlan(keycloakUserId,
+                        new GenerateStudyPlanRequest(productCode, examDate, null), "nl");
+            } finally {
+                TenantContext.clear();
+            }
+        } else {
+            LOG.debug("Skipping auto-generate: active plan exists for userId={}, productCode={}",
+                    keycloakUserId, productCode);
+        }
+    }
+
+    private void handleExamDateSet(JsonNode payload, ConsumerRecord<String, String> record) {
+        String keycloakUserIdStr = payload.has("keycloakUserId")
+                ? payload.get("keycloakUserId").asText(null) : null;
+        String tenantIdStr = payload.has("tenantId")
+                ? payload.get("tenantId").asText(null) : null;
+        String productCode = payload.has("productCode")
+                ? payload.get("productCode").asText(null) : null;
+        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
+                ? payload.get("examDate").asText(null) : null;
+
+        if (keycloakUserIdStr == null || tenantIdStr == null
+                || productCode == null || productCode.isBlank()) {
+            LOG.warn("Ignoring incomplete UserExamDateSet event: offset={}", record.offset());
+            return;
+        }
+
+        UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
+        UUID tenantId = UUID.fromString(tenantIdStr);
+        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+
+        LOG.info("Regenerating study plan for exam date change: userId={}, productCode={}, examDate={}",
+                keycloakUserId, productCode, examDate);
+        TenantContext.set(tenantId);
+        try {
+            studyPlanService.generatePlan(keycloakUserId,
+                    new GenerateStudyPlanRequest(productCode, examDate, null), "nl");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private void handleExamDateCleared(JsonNode payload, ConsumerRecord<String, String> record) {
+        String keycloakUserIdStr = payload.has("keycloakUserId")
+                ? payload.get("keycloakUserId").asText(null) : null;
+        String tenantIdStr = payload.has("tenantId")
+                ? payload.get("tenantId").asText(null) : null;
+        String productCode = payload.has("productCode")
+                ? payload.get("productCode").asText(null) : null;
+
+        if (keycloakUserIdStr == null || tenantIdStr == null
+                || productCode == null || productCode.isBlank()) {
+            LOG.warn("Ignoring incomplete UserExamDateCleared event: offset={}", record.offset());
+            return;
+        }
+
+        UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
+        UUID tenantId = UUID.fromString(tenantIdStr);
+
+        TenantContext.set(tenantId);
+        try {
+            planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+                            keycloakUserId, productCode, PlanStatus.ACTIVE)
+                    .ifPresent(plan -> {
+                        plan.setStatus(PlanStatus.ABANDONED);
+                        plan.setUpdatedAt(Instant.now());
+                        planRepository.save(plan);
+                        LOG.info("Abandoned study plan after exam date cleared: userId={}, planId={}",
+                                keycloakUserId, plan.getId());
+                    });
+        } finally {
+            TenantContext.clear();
         }
     }
 

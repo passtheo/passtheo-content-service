@@ -197,7 +197,7 @@ public class StudyPlanService {
             day.setDayNumber(dayNumber);
             day.setPlanDate(planDate);
             day.setDomainCode("ALL");
-            day.setQuestionTarget(request.dailyQuestionTarget());
+            day.setQuestionTarget(resolvedDailyTarget);
             day.setQuestionsCompleted(0);
             day.setIncludeExam(true);
             day.setStatus(PlanDayStatus.PENDING);
@@ -217,7 +217,7 @@ public class StudyPlanService {
         plan.setTenantId(TenantContext.get());
         plan.setKeycloakUserId(userId);
         plan.setProductCode(request.productCode());
-        plan.setExamDate(request.examDate());
+        plan.setExamDate(resolvedExamDate);
         plan.setTotalDays(days.size());
         plan.setStatus(PlanStatus.ACTIVE);
         plan.setDailyQuestionTarget(resolvedDailyTarget);

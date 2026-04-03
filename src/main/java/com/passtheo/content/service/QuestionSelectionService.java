@@ -3,9 +3,14 @@ package com.passtheo.content.service;
 import com.passtheo.content.domain.entity.QuestionProgress;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.repository.QuestionProgressRepository;
+import com.passtheo.content.domain.enums.SessionType;
+import com.passtheo.shared.core.exception.AppException;
+import com.passtheo.shared.core.exception.ErrorCode;
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -44,19 +49,28 @@ public class QuestionSelectionService {
         this.strapiContentCache = strapiContentCache;
     }
 
+    /** Minimum number of questions required for a WEAK_REVIEW session. */
+    private static final int MIN_WEAK_REVIEW_COUNT = 5;
+
     /**
      * Selects N questions for a practice session using spaced repetition priorities.
      * Coverage guarantee: students must see ALL questions at least once.
      *
+     * <p>For {@link SessionType#WEAK_REVIEW} sessions, only due reviews (P1) and weak/LEARNING
+     * questions (P2) are selected — new and familiar questions are skipped. If fewer than
+     * {@value #MIN_WEAK_REVIEW_COUNT} weak questions are available, a 400 error is thrown.</p>
+     *
      * @param userId      the user's Keycloak ID
      * @param productCode the product code
      * @param domainCode  the domain code (nullable for mixed/all domains)
+     * @param sessionType the session type (nullable defaults to PRACTICE behaviour)
      * @param count       number of questions to select
      * @param locale      content locale for Strapi lookups
      * @return ordered list of Strapi question IDs
      */
     public List<String> selectQuestions(@Nonnull UUID userId, @Nonnull String productCode,
-                                        String domainCode, int count, @Nonnull String locale) {
+                                        String domainCode, @Nullable SessionType sessionType,
+                                        int count, @Nonnull String locale) {
         List<String> selected = new ArrayList<>();
         int dueAdded = 0;
         int weakAdded = 0;
@@ -90,6 +104,17 @@ public class QuestionSelectionService {
                     weakAdded++;
                 }
             }
+        }
+
+        // WEAK_REVIEW: only due reviews + weak questions — no new or familiar
+        if (sessionType == SessionType.WEAK_REVIEW) {
+            if (selected.size() < MIN_WEAK_REVIEW_COUNT) {
+                throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR,
+                        "No weak questions to review — keep practicing!");
+            }
+            LOG.debug("WEAK_REVIEW selection COMPLETE: user={}, product={}, domain={}, total={} [due={}, weak={}]",
+                    userId, productCode, domainCode, selected.size(), dueAdded, weakAdded);
+            return List.copyOf(selected);
         }
 
         // Priority 3: New (unseen) questions — shuffled randomly for variety
