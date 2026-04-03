@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Pageable;
 
 /**
  * Selects optimal questions for practice sessions using a modified SM-2 algorithm.
@@ -64,7 +65,7 @@ public class QuestionSelectionService {
 
         // Priority 1: Due reviews (nextReviewAt < now) — most overdue first
         List<QuestionProgress> dueReviews = progressRepository
-                .findDueReviews(userId, productCode, domainCode, Instant.now());
+                .findDueReviews(userId, productCode, domainCode, Instant.now(), Pageable.ofSize(count));
         dueReviews.sort(Comparator.comparing(QuestionProgress::getNextReviewAt));
         LOG.debug("Question selection P1 due-reviews: user={}, available={}", userId, dueReviews.size());
         for (QuestionProgress qp : dueReviews) {
@@ -78,7 +79,7 @@ public class QuestionSelectionService {
         // Priority 2: Weak questions (LEARNING with consecutiveCorrect < threshold)
         if (selected.size() < count) {
             List<QuestionProgress> weak = progressRepository
-                    .findWeak(userId, productCode, domainCode, WEAK_CONSECUTIVE_THRESHOLD);
+                    .findWeak(userId, productCode, domainCode, WEAK_CONSECUTIVE_THRESHOLD, Pageable.ofSize(count));
             LOG.debug("Question selection P2 weak: user={}, available={}", userId, weak.size());
             for (QuestionProgress qp : weak) {
                 if (selected.size() >= count) {
@@ -116,7 +117,7 @@ public class QuestionSelectionService {
         // Priority 4: Fill with FAMILIAR questions closest to review date
         if (selected.size() < count) {
             List<QuestionProgress> familiar = progressRepository
-                    .findFamiliarSorted(userId, productCode, domainCode);
+                    .findFamiliarSorted(userId, productCode, domainCode, Pageable.ofSize(count));
             LOG.debug("Question selection P4 familiar-fill: user={}, available={}", userId, familiar.size());
             for (QuestionProgress qp : familiar) {
                 if (selected.size() >= count) {

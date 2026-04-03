@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 
 /**
  * Repository for QuestionProgress entities — core spaced repetition data.
@@ -48,7 +49,8 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
             @Param("domainCode") String domainCode,
-            @Param("now") Instant now);
+            @Param("now") Instant now,
+            Pageable pageable);
 
     /**
      * Finds weak questions (LEARNING with low consecutive correct).
@@ -68,7 +70,8 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
             @Param("domainCode") String domainCode,
-            @Param("maxConsecutive") int maxConsecutive);
+            @Param("maxConsecutive") int maxConsecutive,
+            Pageable pageable);
 
     /**
      * Finds IDs of questions the user has already seen.
@@ -102,7 +105,8 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
     List<QuestionProgress> findFamiliarSorted(
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
-            @Param("domainCode") String domainCode);
+            @Param("domainCode") String domainCode,
+            Pageable pageable);
 
     /**
      * Counts total questions attempted by a user for a product.

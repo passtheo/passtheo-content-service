@@ -61,7 +61,7 @@ passtheo:
     base-url: http://localhost:1337
     api-token: test-token
   subscription-service:
-    base-url: http://localhost:8083
+    base-url: http://localhost:8084
   content-cache:
     ttl-seconds: 60
   free-tier:
