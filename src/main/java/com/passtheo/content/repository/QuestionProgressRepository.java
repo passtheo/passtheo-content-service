@@ -83,9 +83,10 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
            "SUM(CASE WHEN qp.masteryLevel = 'MASTERED' THEN 1 ELSE 0 END) AS masteredCount, " +
            "SUM(CASE WHEN qp.masteryLevel IN ('LEARNING', 'FAMILIAR') THEN 1 ELSE 0 END) AS learningCount " +
            "FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
-           "AND qp.productCode = :productCode GROUP BY qp.domainCode")
-    List<DomainMasteryProjection> aggregateByDomain(@Param("userId") UUID userId,
-                                                     @Param("productCode") String productCode);
+           "AND qp.productCode = :productCode AND qp.domainCode <> '' " +
+           "GROUP BY qp.domainCode")
+    List<DomainMasteryProjection> aggregateByDomain(@Nonnull @Param("userId") UUID userId,
+                                                     @Nonnull @Param("productCode") String productCode);
 
     /**
      * Finds a progress record by user and question.
