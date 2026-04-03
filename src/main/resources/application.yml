@@ -106,7 +106,7 @@ passtheo:
     base-url: ${STRAPI_BASE_URL:http://localhost:1337}
     api-token: ${STRAPI_API_TOKEN:strapi-api-token}
   subscription-service:
-    base-url: ${SUBSCRIPTION_SERVICE_URL:http://localhost:8083}
+    base-url: ${SUBSCRIPTION_SERVICE_URL:http://localhost:8084}
   user-service:
     base-url: ${USER_SERVICE_URL:http://localhost:8082}
   content-cache:

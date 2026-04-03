@@ -23,6 +23,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.springframework.data.domain.Pageable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -49,9 +50,9 @@ class QuestionSelectionServiceTest {
 
     @Test
     void new_user_gets_unseen_questions() {
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>());
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
                 .thenReturn(Set.of());
@@ -66,9 +67,9 @@ class QuestionSelectionServiceTest {
     @Test
     void due_reviews_are_prioritized_first() {
         QuestionProgress dueQ = buildProgress("q-due-1", Instant.now().minus(1, ChronoUnit.DAYS));
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>(List.of(dueQ)));
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
                 .thenReturn(Set.of("q-due-1"));
@@ -85,9 +86,9 @@ class QuestionSelectionServiceTest {
     void weak_questions_fill_when_no_due_reviews() {
         QuestionProgress weak = buildProgress("q-weak-1", null);
         weak.setConsecutiveCorrect(1);
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>());
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of(weak));
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
                 .thenReturn(Set.of("q-weak-1"));
@@ -103,9 +104,9 @@ class QuestionSelectionServiceTest {
     void no_duplicate_questions_in_selection() {
         QuestionProgress dueQ = buildProgress("q-1", Instant.now().minus(1, ChronoUnit.DAYS));
         QuestionProgress weakQ = buildProgress("q-1", null);
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>(List.of(dueQ)));
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of(weakQ));
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
                 .thenReturn(Set.of("q-1"));
@@ -120,9 +121,9 @@ class QuestionSelectionServiceTest {
 
     @Test
     void mixed_session_null_domain_uses_product_questions() {
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(null), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(null), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>());
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(null), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(null), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, null))
                 .thenReturn(Set.of());
@@ -136,15 +137,15 @@ class QuestionSelectionServiceTest {
 
     @Test
     void returns_empty_when_no_questions_exist() {
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>());
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
                 .thenReturn(Set.of());
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
                 .thenReturn(List.of());
-        when(progressRepository.findFamiliarSorted(USER_ID, PRODUCT, DOMAIN))
+        when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Pageable.class)))
                 .thenReturn(List.of());
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 5, LOCALE);
@@ -155,15 +156,15 @@ class QuestionSelectionServiceTest {
     @Test
     void familiar_questions_used_as_last_resort_fill() {
         QuestionProgress familiar = buildProgress("q-familiar-1", Instant.now().plus(3, ChronoUnit.DAYS));
-        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class)))
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
                 .thenReturn(new ArrayList<>());
-        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt()))
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
                 .thenReturn(Set.of());
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
                 .thenReturn(List.of());
-        when(progressRepository.findFamiliarSorted(USER_ID, PRODUCT, DOMAIN))
+        when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Pageable.class)))
                 .thenReturn(List.of(familiar));
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 1, LOCALE);

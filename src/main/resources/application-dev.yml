@@ -16,7 +16,7 @@ passtheo:
   strapi:
     base-url: http://localhost:1337
   subscription-service:
-    base-url: http://localhost:8083
+    base-url: http://localhost:8084
 
 logging:
   level:
