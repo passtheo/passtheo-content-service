@@ -123,7 +123,9 @@ public class PracticeSessionService {
         String locale = request.locale() != null ? request.locale() : "nl";
 
         // Check minimum question pool before selection — domains with < 5 questions
-        // produce broken navigator grids in Flutter
+        // produce broken navigator grids in Flutter.
+        // Note: checks domain-level count only. If topic-level filtering is added to
+        // QuestionSelectionService in the future, this check needs updating.
         int availableCount = (request.domainCode() != null && !request.domainCode().isBlank())
                 ? strapiContentCache.getQuestionCountByDomain(request.domainCode(), locale)
                 : strapiContentCache.getQuestionCount(request.productCode(), locale);

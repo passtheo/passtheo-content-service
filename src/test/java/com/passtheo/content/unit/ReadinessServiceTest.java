@@ -203,6 +203,27 @@ class ReadinessServiceTest {
         assertThat(dsv.strength()).isEqualTo(DomainStrength.STRONG.name());
     }
 
+    @Test
+    void calculate_accuracyNeverExceeds100_whenQuestionsAnsweredMultipleTimes() {
+        // 10 questions attempted, each answered ~3 times (30 total), 20 total correct.
+        // Old bug: accuracy = 20/10 = 200%.  Fixed: accuracy = 20/30 ≈ 66.7%.
+        when(strapiContentCache.getQuestionCount(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(500);
+        when(progressRepository.countAttempted(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(10);
+        when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(20);
+        when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(30);
+        when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
+                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(List.of());
+        when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.accuracyScore()).isCloseTo(66.67, within(0.1));
+        assertThat(result.accuracyScore()).isLessThanOrEqualTo(100.0);
+        assertThat(result.readinessScore()).isLessThanOrEqualTo(100.0);
+    }
+
     // ─── DOMAIN STRENGTH CLASSIFICATION ───
 
     @Test
