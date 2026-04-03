@@ -14,6 +14,7 @@ import com.passtheo.content.dto.response.TopicWithProgressDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.DomainProgressRepository;
+import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
 import com.passtheo.shared.core.dto.ApiResponse;
@@ -46,23 +47,27 @@ public class ContentController {
 
     private final StrapiContentCache strapiContentCache;
     private final DomainProgressRepository domainProgressRepository;
+    private final QuestionProgressRepository questionProgressRepository;
     private final EntitlementChecker entitlementChecker;
     private final OnboardingCatalogService onboardingCatalogService;
 
     /**
      * Constructs the content controller.
      *
-     * @param strapiContentCache       Strapi content cache
-     * @param domainProgressRepository domain progress repository
-     * @param entitlementChecker       entitlement checker
-     * @param onboardingCatalogService onboarding catalog service
+     * @param strapiContentCache         Strapi content cache
+     * @param domainProgressRepository   domain progress repository
+     * @param questionProgressRepository question progress repository
+     * @param entitlementChecker         entitlement checker
+     * @param onboardingCatalogService   onboarding catalog service
      */
     public ContentController(StrapiContentCache strapiContentCache,
                              DomainProgressRepository domainProgressRepository,
+                             QuestionProgressRepository questionProgressRepository,
                              EntitlementChecker entitlementChecker,
                              OnboardingCatalogService onboardingCatalogService) {
         this.strapiContentCache = strapiContentCache;
         this.domainProgressRepository = domainProgressRepository;
+        this.questionProgressRepository = questionProgressRepository;
         this.entitlementChecker = entitlementChecker;
         this.onboardingCatalogService = onboardingCatalogService;
     }
@@ -193,6 +198,8 @@ public class ContentController {
      * @param productTypeCode the product type code
      * @param productCode     the product code
      * @param domainCode      the domain code
+     * @param tenantId        tenant ID from header
+     * @param userId          user ID from header
      * @param locale          content locale
      * @return list of topics with progress
      */
@@ -202,12 +209,32 @@ public class ContentController {
             @PathVariable @Nonnull String productTypeCode,
             @PathVariable @Nonnull String productCode,
             @PathVariable @Nonnull String domainCode,
+            @RequestHeader("X-Tenant-ID") UUID tenantId,
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @RequestParam(defaultValue = "nl") String locale) {
+
+        Map<String, QuestionProgressRepository.TopicMasteryProjection> progressMap =
+                questionProgressRepository.aggregateByTopic(userId, productCode, domainCode).stream()
+                        .collect(Collectors.toMap(
+                                QuestionProgressRepository.TopicMasteryProjection::getTopicCode,
+                                p -> p));
+
         var topics = strapiContentCache.getTopics(domainCode, locale).stream()
-                .map(t -> new TopicWithProgressDto(
-                        t.code(), t.name(), t.difficulty(),
-                        strapiContentCache.getQuestionCountByTopic(t.code(), locale),
-                        null))
+                .map(t -> {
+                    int questionCount = strapiContentCache.getQuestionCountByTopic(t.code(), locale);
+                    QuestionProgressRepository.TopicMasteryProjection agg = progressMap.get(t.code());
+
+                    double coverage = agg != null && questionCount > 0
+                            ? (double) agg.getAttemptedCount() / questionCount * 100.0 : 0.0;
+                    double accuracy = agg != null && agg.getTotalAttempts() > 0
+                            ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                    int mastered = agg != null ? (int) agg.getMasteredCount() : 0;
+
+                    var progress = new TopicWithProgressDto.TopicProgressOverlay(
+                            coverage, accuracy, mastered);
+
+                    return new TopicWithProgressDto(t.code(), t.name(), t.difficulty(), questionCount, progress);
+                })
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(topics, MDC.get("traceId")));
     }
