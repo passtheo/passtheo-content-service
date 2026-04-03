@@ -13,6 +13,7 @@ Feature: Readiness score includes exam countdown and predicted ready date
     Then status 200
     And match response.success == true
     And match response.data.readinessScore == '#number'
+    And assert response.data.readinessScore >= 0 && response.data.readinessScore <= 100
     And match response.data.readinessLabel == '#string'
     And match response.data.examCountdownDays == '##number'
     And match response.data.predictedReadyDate == '##string'

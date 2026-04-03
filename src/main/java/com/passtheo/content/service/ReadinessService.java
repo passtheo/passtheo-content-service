@@ -85,17 +85,18 @@ public class ReadinessService {
     public ReadinessScore calculate(@Nonnull UUID userId, @Nonnull String productCode,
                                     @Nonnull String locale) {
         int totalQuestions = strapiContentCache.getQuestionCount(productCode, locale);
-        int attempted = progressRepository.countAttempted(userId, productCode);
-        int correct = progressRepository.countCorrect(userId, productCode);
+        int questionsAttempted = progressRepository.countAttempted(userId, productCode);
+        int totalCorrect = progressRepository.countCorrect(userId, productCode);
+        int totalAttempts = progressRepository.countTotalAttempts(userId, productCode);
         Integer bestExamScore = examAttemptRepository.findBestScore(userId, productCode);
 
         StrapiExamConfigDto examConfig = strapiContentCache.getExamConfig(productCode);
         int passScore = examConfig != null ? examConfig.passScore() : 44;
 
         double coverage = totalQuestions > 0
-                ? (double) attempted / totalQuestions * 100.0 : 0.0;
-        double accuracy = attempted > 0
-                ? (double) correct / attempted * 100.0 : 0.0;
+                ? (double) questionsAttempted / totalQuestions * 100.0 : 0.0;
+        double accuracy = totalAttempts > 0
+                ? (double) totalCorrect / totalAttempts * 100.0 : 0.0;
         double exam = 0.0;
         if (bestExamScore != null && passScore > 0) {
             exam = Math.min(100.0, (double) bestExamScore / passScore * 100.0);
@@ -161,7 +162,7 @@ public class ReadinessService {
 
         return new ReadinessScore(
                 readiness, coverage, accuracy, exam, label,
-                attempted, totalQuestions, bestExamScore, passScore,
+                questionsAttempted, totalQuestions, bestExamScore, passScore,
                 domainStrengths, examCountdownDays, predictedReadyDate
         );
     }
