@@ -15,7 +15,11 @@ public record ReadinessDto(
     int totalQuestions,
     Integer bestExamScore,
     int examPassScore,
-    List<DomainStrengthDto> domainStrengths
+    List<DomainStrengthDto> domainStrengths,
+    int examConfidence,
+    String examConfidenceLabel,
+    String recommendation,
+    ConfidenceBreakdownDto confidenceBreakdown
 ) {
     /**
      * Per-domain strength breakdown.
@@ -26,5 +30,20 @@ public record ReadinessDto(
         double accuracyPercent,
         double coveragePercent,
         String strength
+    ) {}
+
+    /**
+     * Per-criterion point breakdown for exam confidence.
+     */
+    public record ConfidenceBreakdownDto(
+        int coveragePoints,
+        int accuracyPoints,
+        int examConsistencyPoints,
+        int avgScorePoints,
+        int noWeakDomainsPoints,
+        boolean coverageMet,
+        boolean accuracyMet,
+        int consecutivePasses,
+        List<String> weakDomainCodes
     ) {}
 }

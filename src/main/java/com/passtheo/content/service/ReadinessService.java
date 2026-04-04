@@ -1,8 +1,12 @@
 package com.passtheo.content.service;
 
 import com.passtheo.shared.core.client.UserServiceInternalClient;
+import com.passtheo.content.domain.entity.ExamAttempt;
+import com.passtheo.content.domain.enums.ConfidenceLabel;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
+import com.passtheo.content.domain.enums.RecommendationKey;
+import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
@@ -13,6 +17,7 @@ import com.passtheo.shared.core.context.TenantContext;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +54,25 @@ public class ReadinessService {
 
     private static final double READY_THRESHOLD = 80.0;
     private static final double DAILY_PROGRESS_ESTIMATE = 0.5;
+
+    // Exam confidence criteria thresholds
+    private static final int CONFIDENCE_CAP = 95;
+    private static final int COVERAGE_MAX_POINTS = 20;
+    private static final int ACCURACY_MAX_POINTS = 25;
+    private static final int EXAM_CONSISTENCY_MAX_POINTS = 30;
+    private static final int AVG_SCORE_MAX_POINTS = 15;
+    private static final int NO_WEAK_DOMAINS_MAX_POINTS = 10;
+    private static final double COVERAGE_HIGH_THRESHOLD = 90.0;
+    private static final double COVERAGE_MID_THRESHOLD = 70.0;
+    private static final double ACCURACY_HIGH_THRESHOLD = 88.0;
+    private static final double ACCURACY_MID_THRESHOLD = 80.0;
+    private static final int CONSISTENCY_HIGH_CONSECUTIVE = 3;
+    private static final double AVG_SCORE_HIGH_THRESHOLD = 46.0;
+    private static final double AVG_SCORE_MID_THRESHOLD = 44.0;
+    private static final int COVERAGE_MID_POINTS = 10;
+    private static final int ACCURACY_MID_POINTS = 15;
+    private static final int EXAM_CONSISTENCY_MID_POINTS = 15;
+    private static final int AVG_SCORE_MID_POINTS = 10;
 
     private final QuestionProgressRepository progressRepository;
     private final ExamAttemptRepository examAttemptRepository;
@@ -160,11 +184,175 @@ public class ReadinessService {
             predictedReadyDate = today;
         }
 
+        ExamConfidence examConfidence = calculateExamConfidence(
+                userId, productCode, coverage, accuracy, passScore, domainStrengths);
+
         return new ReadinessScore(
                 readiness, coverage, accuracy, exam, label,
                 questionsAttempted, totalQuestions, bestExamScore, passScore,
-                domainStrengths, examCountdownDays, predictedReadyDate
+                domainStrengths, examCountdownDays, predictedReadyDate, examConfidence
         );
+    }
+
+    /**
+     * Calculates the composite exam confidence score (0-95) from 5 weighted criteria.
+     *
+     * <ul>
+     *   <li>Coverage (max 20): &ge;90% &rarr; 20, 70-89% &rarr; 10, &lt;70% &rarr; 0</li>
+     *   <li>Accuracy (max 25): &ge;88% &rarr; 25, 80-87% &rarr; 15, &lt;80% &rarr; 0</li>
+     *   <li>Mock consistency (max 30): 3+ consecutive passes &rarr; 30, 1-2 &rarr; 15, 0 &rarr; 0</li>
+     *   <li>Average score (max 15): avg &ge;46 &rarr; 15, avg &ge;44 &rarr; 10, &lt;44 &rarr; 0</li>
+     *   <li>No weak domains (max 10): 0 WEAK &rarr; 10, any WEAK &rarr; 0</li>
+     * </ul>
+     *
+     * @param userId          the user's Keycloak ID
+     * @param productCode     the product code
+     * @param coverage        coverage percentage (0-100)
+     * @param accuracy        accuracy percentage (0-100)
+     * @param passScore       the pass score threshold
+     * @param domainStrengths per-domain strength breakdown
+     * @return the exam confidence assessment
+     */
+    private ExamConfidence calculateExamConfidence(@Nonnull UUID userId, @Nonnull String productCode,
+                                                   double coverage, double accuracy, int passScore,
+                                                   @Nonnull List<ReadinessScore.DomainStrengthValue> domainStrengths) {
+        // Criterion 1: Coverage (max 20)
+        int coveragePoints;
+        boolean coverageMet;
+        if (coverage >= COVERAGE_HIGH_THRESHOLD) {
+            coveragePoints = COVERAGE_MAX_POINTS;
+            coverageMet = true;
+        } else if (coverage >= COVERAGE_MID_THRESHOLD) {
+            coveragePoints = COVERAGE_MID_POINTS;
+            coverageMet = true;
+        } else {
+            coveragePoints = 0;
+            coverageMet = false;
+        }
+
+        // Criterion 2: Accuracy (max 25)
+        int accuracyPoints;
+        boolean accuracyMet;
+        if (accuracy >= ACCURACY_HIGH_THRESHOLD) {
+            accuracyPoints = ACCURACY_MAX_POINTS;
+            accuracyMet = true;
+        } else if (accuracy >= ACCURACY_MID_THRESHOLD) {
+            accuracyPoints = ACCURACY_MID_POINTS;
+            accuracyMet = true;
+        } else {
+            accuracyPoints = 0;
+            accuracyMet = false;
+        }
+
+        // Criterion 3: Mock exam consistency — consecutive passes (max 30)
+        int consecutivePasses = countConsecutivePasses(userId, productCode, passScore);
+        int examConsistencyPoints;
+        if (consecutivePasses >= CONSISTENCY_HIGH_CONSECUTIVE) {
+            examConsistencyPoints = EXAM_CONSISTENCY_MAX_POINTS;
+        } else if (consecutivePasses >= 1) {
+            examConsistencyPoints = EXAM_CONSISTENCY_MID_POINTS;
+        } else {
+            examConsistencyPoints = 0;
+        }
+
+        // Criterion 4: Average exam score (max 15)
+        Double avgScore = examAttemptRepository.findAverageScore(userId, productCode);
+        int avgScorePoints;
+        if (avgScore != null && avgScore >= AVG_SCORE_HIGH_THRESHOLD) {
+            avgScorePoints = AVG_SCORE_MAX_POINTS;
+        } else if (avgScore != null && avgScore >= AVG_SCORE_MID_THRESHOLD) {
+            avgScorePoints = AVG_SCORE_MID_POINTS;
+        } else {
+            avgScorePoints = 0;
+        }
+
+        // Criterion 5: No weak domains (max 10)
+        List<String> weakDomainCodes = domainStrengths.stream()
+                .filter(ds -> DomainStrength.WEAK.name().equals(ds.strength()))
+                .map(ReadinessScore.DomainStrengthValue::domainCode)
+                .toList();
+        int noWeakDomainsPoints = weakDomainCodes.isEmpty() ? NO_WEAK_DOMAINS_MAX_POINTS : 0;
+
+        int rawTotal = coveragePoints + accuracyPoints + examConsistencyPoints
+                + avgScorePoints + noWeakDomainsPoints;
+        int score = Math.min(rawTotal, CONFIDENCE_CAP);
+
+        ConfidenceLabel label = classifyConfidenceLabel(score);
+        RecommendationKey recommendation = generateRecommendationKey(score);
+
+        ExamConfidence.Breakdown breakdown = new ExamConfidence.Breakdown(
+                coveragePoints, accuracyPoints, examConsistencyPoints,
+                avgScorePoints, noWeakDomainsPoints,
+                coverageMet, accuracyMet, consecutivePasses, weakDomainCodes);
+
+        return new ExamConfidence(score, label, recommendation, breakdown);
+    }
+
+    /**
+     * Counts consecutive recent exam passes from most recent backward.
+     * An exam counts as a pass when {@code isPassed()} is true AND the correctCount
+     * meets the passScore threshold. The double-check guards against exams marked passed
+     * with a stale or mismatched passScore (e.g. exam config changed after the attempt).
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param passScore   the current pass score threshold
+     * @return number of consecutive passes from the most recent attempt
+     */
+    private int countConsecutivePasses(UUID userId, String productCode, int passScore) {
+        List<ExamAttempt> recentExams = examAttemptRepository
+                .findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                        userId, productCode, PageRequest.of(0, 20))
+                .getContent();
+
+        int count = 0;
+        for (ExamAttempt exam : recentExams) {
+            if (exam.isPassed() && exam.getCorrectCount() >= passScore) {
+                count++;
+            } else {
+                break;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Classifies the confidence score into a machine-readable label.
+     *
+     * @param score the confidence score (0-95)
+     * @return the confidence label
+     */
+    public static ConfidenceLabel classifyConfidenceLabel(int score) {
+        if (score < 30) {
+            return ConfidenceLabel.NOT_READY;
+        }
+        if (score < 60) {
+            return ConfidenceLabel.GETTING_THERE;
+        }
+        if (score < 80) {
+            return ConfidenceLabel.ALMOST_READY;
+        }
+        return ConfidenceLabel.READY;
+    }
+
+    /**
+     * Returns a machine-readable recommendation key based on confidence score.
+     * Flutter maps {@code name()} to localized strings via ARB files.
+     *
+     * @param score the confidence score (0-95)
+     * @return the recommendation key
+     */
+    public static RecommendationKey generateRecommendationKey(int score) {
+        if (score < 40) {
+            return RecommendationKey.KEEP_PRACTICING;
+        }
+        if (score < 60) {
+            return RecommendationKey.FOCUS_WEAK_DOMAINS;
+        }
+        if (score < 80) {
+            return RecommendationKey.PASS_MORE_EXAMS;
+        }
+        return RecommendationKey.BOOK_YOUR_EXAM;
     }
 
     /**

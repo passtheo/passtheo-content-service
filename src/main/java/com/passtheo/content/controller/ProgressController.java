@@ -1,5 +1,6 @@
 package com.passtheo.content.controller;
 
+import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.dto.response.DomainProgressDto;
 import com.passtheo.content.dto.response.MasteryStatsDto;
@@ -60,6 +61,8 @@ public class ProgressController {
             @RequestParam(defaultValue = "nl") String locale) {
 
         ReadinessScore score = readinessService.calculate(userId, productCode, locale);
+        ExamConfidence confidence = score.examConfidence();
+        ExamConfidence.Breakdown cb = confidence.breakdown();
         ReadinessDto dto = new ReadinessDto(
                 score.readinessScore(), score.coverageScore(), score.accuracyScore(),
                 score.examScore(), score.readinessLabel().name(),
@@ -69,7 +72,12 @@ public class ProgressController {
                         .map(ds -> new ReadinessDto.DomainStrengthDto(
                                 ds.domainCode(), ds.domainName(),
                                 ds.accuracyPercent(), ds.coveragePercent(), ds.strength()))
-                        .toList()
+                        .toList(),
+                confidence.score(), confidence.label().name(), confidence.recommendation().name(),
+                new ReadinessDto.ConfidenceBreakdownDto(
+                        cb.coveragePoints(), cb.accuracyPoints(), cb.examConsistencyPoints(),
+                        cb.avgScorePoints(), cb.noWeakDomainsPoints(),
+                        cb.coverageMet(), cb.accuracyMet(), cb.consecutivePasses(), cb.weakDomainCodes())
         );
         return ResponseEntity.ok(ApiResponse.success(dto, MDC.get("traceId")));
     }

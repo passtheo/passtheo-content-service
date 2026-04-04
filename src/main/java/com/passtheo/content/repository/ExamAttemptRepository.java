@@ -38,7 +38,7 @@ public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, UUID> 
      * @return the best correct count, or null if no exams taken
      */
     @Query("SELECT MAX(ea.correctCount) FROM ExamAttempt ea WHERE ea.keycloakUserId = :userId " +
-           "AND ea.productCode = :productCode")
+           "AND ea.productCode = :productCode AND ea.deletedAt IS NULL")
     Integer findBestScore(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
 
     /**
@@ -59,7 +59,7 @@ public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, UUID> 
      * @return count of perfect exams
      */
     @Query("SELECT COUNT(ea) FROM ExamAttempt ea WHERE ea.keycloakUserId = :userId " +
-           "AND ea.productCode = :productCode AND ea.correctCount = ea.totalQuestions")
+           "AND ea.productCode = :productCode AND ea.correctCount = ea.totalQuestions AND ea.deletedAt IS NULL")
     long countPerfect(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
 
     /**
@@ -71,7 +71,7 @@ public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, UUID> 
      * @return count of recent exams
      */
     @Query("SELECT COUNT(ea) FROM ExamAttempt ea WHERE ea.keycloakUserId = :userId " +
-           "AND ea.productCode = :productCode AND ea.completedAt > :cutoff")
+           "AND ea.productCode = :productCode AND ea.completedAt > :cutoff AND ea.deletedAt IS NULL")
     long countRecentExams(@Param("userId") UUID keycloakUserId,
                           @Param("productCode") String productCode,
                           @Param("cutoff") Instant cutoff);
@@ -84,6 +84,17 @@ public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, UUID> 
      * @return the exam attempt if found
      */
     Optional<ExamAttempt> findByIdAndKeycloakUserId(@Nonnull UUID id, @Nonnull UUID keycloakUserId);
+
+    /**
+     * Computes the average correctCount across all exam attempts for a user/product.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return average correct count, or null if no exams taken
+     */
+    @Query("SELECT AVG(ea.correctCount) FROM ExamAttempt ea WHERE ea.keycloakUserId = :userId " +
+           "AND ea.productCode = :productCode AND ea.deletedAt IS NULL")
+    Double findAverageScore(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
 
     /**
      * Deletes all exams for a user (GDPR).

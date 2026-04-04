@@ -1,8 +1,11 @@
 package com.passtheo.content.unit;
 
 import com.passtheo.shared.core.client.UserServiceInternalClient;
+import com.passtheo.content.domain.enums.ConfidenceLabel;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
+import com.passtheo.content.domain.enums.RecommendationKey;
+import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
@@ -17,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -193,6 +198,10 @@ class ReadinessServiceTest {
         when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
                 .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
         when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
 
         ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
 
@@ -216,12 +225,226 @@ class ReadinessServiceTest {
                 .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
         when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(List.of());
         when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
 
         ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
 
         assertThat(result.accuracyScore()).isCloseTo(66.67, within(0.1));
         assertThat(result.accuracyScore()).isLessThanOrEqualTo(100.0);
         assertThat(result.readinessScore()).isLessThanOrEqualTo(100.0);
+    }
+
+    // ─── EXAM CONFIDENCE ───
+
+    @Test
+    void calculate_zeroProgress_examConfidenceNotReady() {
+        setupMocks(500, 0, 0, null, 44);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.examConfidence()).isNotNull();
+        // Only noWeakDomainsPoints=10 (vacuously no weak domains)
+        assertThat(result.examConfidence().score()).isEqualTo(10);
+        assertThat(result.examConfidence().label()).isEqualTo(ConfidenceLabel.NOT_READY);
+        assertThat(result.examConfidence().recommendation()).isEqualTo(RecommendationKey.KEEP_PRACTICING);
+        assertThat(result.examConfidence().breakdown().weakDomainCodes()).isEmpty();
+    }
+
+    @Test
+    void calculate_highCoverageAndAccuracy_noExams_earnsCoverageAndAccuracyPoints() {
+        // coverage = 450/500 = 90%, accuracy = 400/450 = 88.9%
+        setupMocks(500, 450, 400, null, 44);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        ExamConfidence.Breakdown b = result.examConfidence().breakdown();
+        assertThat(b.coveragePoints()).isEqualTo(20);  // ≥90%
+        assertThat(b.accuracyPoints()).isEqualTo(25);  // ≥88%
+        assertThat(b.examConsistencyPoints()).isEqualTo(0);  // no exams
+        assertThat(b.avgScorePoints()).isEqualTo(0);  // no exams
+        assertThat(b.noWeakDomainsPoints()).isEqualTo(10);  // no domains = no weak
+        assertThat(result.examConfidence().score()).isEqualTo(55);
+    }
+
+    @Test
+    void calculate_midCoverageAndAccuracy_earnsMidPoints() {
+        // coverage = 375/500 = 75%, accuracy = 320/375 = 85.3%
+        setupMocks(500, 375, 320, null, 44);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        ExamConfidence.Breakdown b = result.examConfidence().breakdown();
+        assertThat(b.coveragePoints()).isEqualTo(10);  // 70-89%
+        assertThat(b.accuracyPoints()).isEqualTo(15);  // 80-87%
+    }
+
+    @Test
+    void calculate_lowCoverageAndAccuracy_earnsZeroPoints() {
+        // coverage = 200/500 = 40%, accuracy = 120/200 = 60%
+        setupMocks(500, 200, 120, null, 44);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        ExamConfidence.Breakdown b = result.examConfidence().breakdown();
+        assertThat(b.coveragePoints()).isEqualTo(0);  // <70%
+        assertThat(b.accuracyPoints()).isEqualTo(0);  // <80%
+        assertThat(b.coverageMet()).isFalse();
+        assertThat(b.accuracyMet()).isFalse();
+    }
+
+    @Test
+    void calculateExamConfidence_threeConsecutivePasses_earnsFullConsistencyPoints() {
+        setupMocks(500, 450, 400, 46, 44);
+
+        // Mock 3 consecutive passing exams
+        var exam1 = mockExamAttempt(true, 46);
+        var exam2 = mockExamAttempt(true, 45);
+        var exam3 = mockExamAttempt(true, 44);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(exam1, exam2, exam3)));
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(45.0);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        ExamConfidence.Breakdown b = result.examConfidence().breakdown();
+        assertThat(b.examConsistencyPoints()).isEqualTo(30);
+        assertThat(b.consecutivePasses()).isEqualTo(3);
+        assertThat(b.avgScorePoints()).isEqualTo(10);  // avg=45, 44≤avg<46 → 10
+    }
+
+    @Test
+    void calculateExamConfidence_onePass_earnsPartialConsistencyPoints() {
+        setupMocks(500, 450, 400, 46, 44);
+
+        var exam1 = mockExamAttempt(true, 46);
+        var exam2 = mockExamAttempt(false, 40);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(exam1, exam2)));
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(43.0);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        ExamConfidence.Breakdown b = result.examConfidence().breakdown();
+        assertThat(b.examConsistencyPoints()).isEqualTo(15);  // 1-2 passes
+        assertThat(b.consecutivePasses()).isEqualTo(1);
+        assertThat(b.avgScorePoints()).isEqualTo(0);  // avg<44
+    }
+
+    @Test
+    void calculateExamConfidence_highAvgScore_earnsFullAvgPoints() {
+        setupMocks(500, 450, 400, 48, 44);
+
+        var exam1 = mockExamAttempt(true, 48);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(exam1)));
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(48.0);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.examConfidence().breakdown().avgScorePoints()).isEqualTo(15);  // avg≥46
+    }
+
+    @Test
+    void calculateExamConfidence_maxScore_cappedAt95() {
+        // All criteria maxed: 20 + 25 + 30 + 15 + 10 = 100 → capped at 95
+        setupMocks(500, 450, 400, 48, 44);
+
+        var exam1 = mockExamAttempt(true, 48);
+        var exam2 = mockExamAttempt(true, 47);
+        var exam3 = mockExamAttempt(true, 46);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(exam1, exam2, exam3)));
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(47.0);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.examConfidence().score()).isEqualTo(95);
+        assertThat(result.examConfidence().label()).isEqualTo(ConfidenceLabel.READY);
+        assertThat(result.examConfidence().recommendation()).isEqualTo(RecommendationKey.BOOK_YOUR_EXAM);
+    }
+
+    @Test
+    void classifyConfidenceLabel_zeroScore_notReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(0)).isEqualTo(ConfidenceLabel.NOT_READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_scoreBelowThirty_notReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(20)).isEqualTo(ConfidenceLabel.NOT_READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_boundary_29isNotReady_30isGettingThere() {
+        assertThat(ReadinessService.classifyConfidenceLabel(29)).isEqualTo(ConfidenceLabel.NOT_READY);
+        assertThat(ReadinessService.classifyConfidenceLabel(30)).isEqualTo(ConfidenceLabel.GETTING_THERE);
+    }
+
+    @Test
+    void classifyConfidenceLabel_scoreThirtyToSixty_gettingThere() {
+        assertThat(ReadinessService.classifyConfidenceLabel(45)).isEqualTo(ConfidenceLabel.GETTING_THERE);
+    }
+
+    @Test
+    void classifyConfidenceLabel_boundary_59isGettingThere_60isAlmostReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(59)).isEqualTo(ConfidenceLabel.GETTING_THERE);
+        assertThat(ReadinessService.classifyConfidenceLabel(60)).isEqualTo(ConfidenceLabel.ALMOST_READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_scoreSixtyToEighty_almostReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(70)).isEqualTo(ConfidenceLabel.ALMOST_READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_boundary_79isAlmostReady_80isReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(79)).isEqualTo(ConfidenceLabel.ALMOST_READY);
+        assertThat(ReadinessService.classifyConfidenceLabel(80)).isEqualTo(ConfidenceLabel.READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_scoreEightyPlus_ready() {
+        assertThat(ReadinessService.classifyConfidenceLabel(85)).isEqualTo(ConfidenceLabel.READY);
+    }
+
+    // ─── RECOMMENDATION KEYS ───
+
+    @Test
+    void generateRecommendationKey_lowScore_keepPracticing() {
+        assertThat(ReadinessService.generateRecommendationKey(10)).isEqualTo(RecommendationKey.KEEP_PRACTICING);
+        assertThat(ReadinessService.generateRecommendationKey(39)).isEqualTo(RecommendationKey.KEEP_PRACTICING);
+    }
+
+    @Test
+    void generateRecommendationKey_midScore_focusWeakDomains() {
+        assertThat(ReadinessService.generateRecommendationKey(40)).isEqualTo(RecommendationKey.FOCUS_WEAK_DOMAINS);
+        assertThat(ReadinessService.generateRecommendationKey(59)).isEqualTo(RecommendationKey.FOCUS_WEAK_DOMAINS);
+    }
+
+    @Test
+    void generateRecommendationKey_highScore_passMoreExams() {
+        assertThat(ReadinessService.generateRecommendationKey(60)).isEqualTo(RecommendationKey.PASS_MORE_EXAMS);
+        assertThat(ReadinessService.generateRecommendationKey(79)).isEqualTo(RecommendationKey.PASS_MORE_EXAMS);
+    }
+
+    @Test
+    void generateRecommendationKey_maxScore_bookYourExam() {
+        assertThat(ReadinessService.generateRecommendationKey(80)).isEqualTo(RecommendationKey.BOOK_YOUR_EXAM);
+        assertThat(ReadinessService.generateRecommendationKey(95)).isEqualTo(RecommendationKey.BOOK_YOUR_EXAM);
+    }
+
+    private com.passtheo.content.domain.entity.ExamAttempt mockExamAttempt(boolean passed, int correctCount) {
+        var exam = mock(com.passtheo.content.domain.entity.ExamAttempt.class);
+        when(exam.isPassed()).thenReturn(passed);
+        // Lenient because short-circuit evaluation may skip getCorrectCount() when isPassed() is false
+        org.mockito.Mockito.lenient().when(exam.getCorrectCount()).thenReturn(correctCount);
+        return exam;
     }
 
     // ─── DOMAIN STRENGTH CLASSIFICATION ───
@@ -264,5 +487,10 @@ class ReadinessServiceTest {
                 .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, passScore, null, null, true, false, null, null, false));
         when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(List.of());
         when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());
+        // Exam confidence mocks (lenient because individual tests may override)
+        org.mockito.Mockito.lenient().when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        org.mockito.Mockito.lenient().when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
     }
 }
