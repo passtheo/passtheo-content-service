@@ -127,6 +127,13 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
          * @return mastered question count
          */
         long getMasteredCount();
+
+        /**
+         * Returns the most recent updatedAt timestamp across all questions in this topic.
+         *
+         * @return last practiced timestamp, or null if no progress exists
+         */
+        java.time.Instant getLastPracticed();
     }
 
     /**
@@ -141,7 +148,8 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
            "COUNT(qp) AS attemptedCount, " +
            "SUM(qp.totalCorrect) AS correctCount, " +
            "SUM(qp.totalAttempts) AS totalAttempts, " +
-           "SUM(CASE WHEN qp.masteryLevel = 'MASTERED' THEN 1 ELSE 0 END) AS masteredCount " +
+           "SUM(CASE WHEN qp.masteryLevel = 'MASTERED' THEN 1 ELSE 0 END) AS masteredCount, " +
+           "MAX(qp.updatedAt) AS lastPracticed " +
            "FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
            "AND qp.productCode = :productCode AND qp.domainCode = :domainCode " +
            "AND qp.topicCode <> '' " +

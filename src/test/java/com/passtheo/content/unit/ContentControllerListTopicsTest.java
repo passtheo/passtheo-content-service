@@ -15,11 +15,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +65,7 @@ class ContentControllerListTopicsTest {
         assertEquals(0.0, progress.coveragePercent());
         assertEquals(0.0, progress.accuracyPercent());
         assertEquals(0, progress.masteredCount());
+        assertNull(progress.lastPracticed());
     }
 
     @Test
@@ -77,6 +80,8 @@ class ContentControllerListTopicsTest {
         when(projection.getCorrectCount()).thenReturn(7L);
         when(projection.getTotalAttempts()).thenReturn(14L);
         when(projection.getMasteredCount()).thenReturn(3L);
+        Instant lastPracticed = Instant.parse("2026-04-03T10:30:00Z");
+        when(projection.getLastPracticed()).thenReturn(lastPracticed);
         when(questionProgressRepository.aggregateByTopic(USER_ID, PRODUCT, DOMAIN)).thenReturn(List.of(projection));
 
         ResponseEntity<ApiResponse<List<TopicWithProgressDto>>> response =
@@ -86,6 +91,7 @@ class ContentControllerListTopicsTest {
         assertEquals(50.0, progress.coveragePercent(), 0.01);  // 10/20 * 100
         assertEquals(50.0, progress.accuracyPercent(), 0.01);  // 7/14 * 100
         assertEquals(3, progress.masteredCount());
+        assertEquals(lastPracticed, progress.lastPracticed());
     }
 
     @Test
