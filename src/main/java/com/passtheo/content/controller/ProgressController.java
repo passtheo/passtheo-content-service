@@ -73,7 +73,7 @@ public class ProgressController {
                                 ds.domainCode(), ds.domainName(),
                                 ds.accuracyPercent(), ds.coveragePercent(), ds.strength()))
                         .toList(),
-                confidence.score(), confidence.label(), confidence.recommendation(),
+                confidence.score(), confidence.label().name(), confidence.recommendation().name(),
                 new ReadinessDto.ConfidenceBreakdownDto(
                         cb.coveragePoints(), cb.accuracyPoints(), cb.examConsistencyPoints(),
                         cb.avgScorePoints(), cb.noWeakDomainsPoints(),

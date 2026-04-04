@@ -1,17 +1,22 @@
 package com.passtheo.content.domain.valueobject;
 
+import com.passtheo.content.domain.enums.ConfidenceLabel;
+import com.passtheo.content.domain.enums.RecommendationKey;
+
+import java.util.List;
+
 /**
  * Composite exam confidence score (0-95) computed from 5 criteria.
  *
  * @param score              total confidence score (0-95, capped)
- * @param label              human-readable label (NOT_STARTED, NOT_READY, GETTING_THERE, ALMOST_READY, READY)
- * @param recommendation     actionable recommendation text
+ * @param label              machine-readable label (NOT_READY, GETTING_THERE, ALMOST_READY, READY)
+ * @param recommendation     machine-readable recommendation key
  * @param breakdown          per-criterion point breakdown
  */
 public record ExamConfidence(
     int score,
-    String label,
-    String recommendation,
+    ConfidenceLabel label,
+    RecommendationKey recommendation,
     Breakdown breakdown
 ) {
 
@@ -37,6 +42,6 @@ public record ExamConfidence(
         boolean coverageMet,
         boolean accuracyMet,
         int consecutivePasses,
-        java.util.List<String> weakDomainCodes
+        List<String> weakDomainCodes
     ) { }
 }

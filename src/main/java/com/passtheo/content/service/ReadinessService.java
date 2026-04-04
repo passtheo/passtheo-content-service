@@ -2,8 +2,11 @@ package com.passtheo.content.service;
 
 import com.passtheo.shared.core.client.UserServiceInternalClient;
 import com.passtheo.content.domain.entity.ExamAttempt;
+import com.passtheo.content.domain.enums.ConfidenceLabel;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
+import com.passtheo.content.domain.enums.RecommendationKey;
+import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
@@ -14,11 +17,9 @@ import com.passtheo.shared.core.context.TenantContext;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import com.passtheo.content.domain.valueobject.ExamConfidence;
-import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -68,6 +69,10 @@ public class ReadinessService {
     private static final int CONSISTENCY_HIGH_CONSECUTIVE = 3;
     private static final double AVG_SCORE_HIGH_THRESHOLD = 46.0;
     private static final double AVG_SCORE_MID_THRESHOLD = 44.0;
+    private static final int COVERAGE_MID_POINTS = 10;
+    private static final int ACCURACY_MID_POINTS = 15;
+    private static final int EXAM_CONSISTENCY_MID_POINTS = 15;
+    private static final int AVG_SCORE_MID_POINTS = 10;
 
     private final QuestionProgressRepository progressRepository;
     private final ExamAttemptRepository examAttemptRepository;
@@ -208,9 +213,9 @@ public class ReadinessService {
      * @param domainStrengths per-domain strength breakdown
      * @return the exam confidence assessment
      */
-    ExamConfidence calculateExamConfidence(UUID userId, String productCode,
-                                           double coverage, double accuracy, int passScore,
-                                           List<ReadinessScore.DomainStrengthValue> domainStrengths) {
+    private ExamConfidence calculateExamConfidence(@Nonnull UUID userId, @Nonnull String productCode,
+                                                   double coverage, double accuracy, int passScore,
+                                                   @Nonnull List<ReadinessScore.DomainStrengthValue> domainStrengths) {
         // Criterion 1: Coverage (max 20)
         int coveragePoints;
         boolean coverageMet;
@@ -218,7 +223,7 @@ public class ReadinessService {
             coveragePoints = COVERAGE_MAX_POINTS;
             coverageMet = true;
         } else if (coverage >= COVERAGE_MID_THRESHOLD) {
-            coveragePoints = 10;
+            coveragePoints = COVERAGE_MID_POINTS;
             coverageMet = true;
         } else {
             coveragePoints = 0;
@@ -232,7 +237,7 @@ public class ReadinessService {
             accuracyPoints = ACCURACY_MAX_POINTS;
             accuracyMet = true;
         } else if (accuracy >= ACCURACY_MID_THRESHOLD) {
-            accuracyPoints = 15;
+            accuracyPoints = ACCURACY_MID_POINTS;
             accuracyMet = true;
         } else {
             accuracyPoints = 0;
@@ -245,7 +250,7 @@ public class ReadinessService {
         if (consecutivePasses >= CONSISTENCY_HIGH_CONSECUTIVE) {
             examConsistencyPoints = EXAM_CONSISTENCY_MAX_POINTS;
         } else if (consecutivePasses >= 1) {
-            examConsistencyPoints = 15;
+            examConsistencyPoints = EXAM_CONSISTENCY_MID_POINTS;
         } else {
             examConsistencyPoints = 0;
         }
@@ -256,7 +261,7 @@ public class ReadinessService {
         if (avgScore != null && avgScore >= AVG_SCORE_HIGH_THRESHOLD) {
             avgScorePoints = AVG_SCORE_MAX_POINTS;
         } else if (avgScore != null && avgScore >= AVG_SCORE_MID_THRESHOLD) {
-            avgScorePoints = 10;
+            avgScorePoints = AVG_SCORE_MID_POINTS;
         } else {
             avgScorePoints = 0;
         }
@@ -272,8 +277,8 @@ public class ReadinessService {
                 + avgScorePoints + noWeakDomainsPoints;
         int score = Math.min(rawTotal, CONFIDENCE_CAP);
 
-        String label = classifyConfidenceLabel(score);
-        String recommendation = generateRecommendationKey(score);
+        ConfidenceLabel label = classifyConfidenceLabel(score);
+        RecommendationKey recommendation = generateRecommendationKey(score);
 
         ExamConfidence.Breakdown breakdown = new ExamConfidence.Breakdown(
                 coveragePoints, accuracyPoints, examConsistencyPoints,
@@ -284,11 +289,14 @@ public class ReadinessService {
     }
 
     /**
-     * Counts consecutive recent exam passes (scored at or above passScore), from most recent backward.
+     * Counts consecutive recent exam passes from most recent backward.
+     * An exam counts as a pass when {@code isPassed()} is true AND the correctCount
+     * meets the passScore threshold. The double-check guards against exams marked passed
+     * with a stale or mismatched passScore (e.g. exam config changed after the attempt).
      *
      * @param userId      the user's Keycloak ID
      * @param productCode the product code
-     * @param passScore   the pass score threshold
+     * @param passScore   the current pass score threshold
      * @return number of consecutive passes from the most recent attempt
      */
     private int countConsecutivePasses(UUID userId, String productCode, int passScore) {
@@ -312,39 +320,39 @@ public class ReadinessService {
      * Classifies the confidence score into a machine-readable label.
      *
      * @param score the confidence score (0-95)
-     * @return the confidence label enum key
+     * @return the confidence label
      */
-    public static String classifyConfidenceLabel(int score) {
+    public static ConfidenceLabel classifyConfidenceLabel(int score) {
         if (score < 30) {
-            return "NOT_READY";
+            return ConfidenceLabel.NOT_READY;
         }
         if (score < 60) {
-            return "GETTING_THERE";
+            return ConfidenceLabel.GETTING_THERE;
         }
         if (score < 80) {
-            return "ALMOST_READY";
+            return ConfidenceLabel.ALMOST_READY;
         }
-        return "READY";
+        return ConfidenceLabel.READY;
     }
 
     /**
      * Returns a machine-readable recommendation key based on confidence score.
-     * Flutter maps these keys to localized strings via ARB files.
+     * Flutter maps {@code name()} to localized strings via ARB files.
      *
      * @param score the confidence score (0-95)
      * @return the recommendation key
      */
-    public static String generateRecommendationKey(int score) {
+    public static RecommendationKey generateRecommendationKey(int score) {
         if (score < 40) {
-            return "KEEP_PRACTICING";
+            return RecommendationKey.KEEP_PRACTICING;
         }
         if (score < 60) {
-            return "FOCUS_WEAK_DOMAINS";
+            return RecommendationKey.FOCUS_WEAK_DOMAINS;
         }
         if (score < 80) {
-            return "PASS_MORE_EXAMS";
+            return RecommendationKey.PASS_MORE_EXAMS;
         }
-        return "BOOK_YOUR_EXAM";
+        return RecommendationKey.BOOK_YOUR_EXAM;
     }
 
     /**

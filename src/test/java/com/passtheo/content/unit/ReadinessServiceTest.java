@@ -1,8 +1,10 @@
 package com.passtheo.content.unit;
 
 import com.passtheo.shared.core.client.UserServiceInternalClient;
+import com.passtheo.content.domain.enums.ConfidenceLabel;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
+import com.passtheo.content.domain.enums.RecommendationKey;
 import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
@@ -246,8 +248,8 @@ class ReadinessServiceTest {
         assertThat(result.examConfidence()).isNotNull();
         // Only noWeakDomainsPoints=10 (vacuously no weak domains)
         assertThat(result.examConfidence().score()).isEqualTo(10);
-        assertThat(result.examConfidence().label()).isEqualTo("NOT_READY");
-        assertThat(result.examConfidence().recommendation()).isEqualTo("KEEP_PRACTICING");
+        assertThat(result.examConfidence().label()).isEqualTo(ConfidenceLabel.NOT_READY);
+        assertThat(result.examConfidence().recommendation()).isEqualTo(RecommendationKey.KEEP_PRACTICING);
         assertThat(result.examConfidence().breakdown().weakDomainCodes()).isEmpty();
     }
 
@@ -364,59 +366,77 @@ class ReadinessServiceTest {
         ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
 
         assertThat(result.examConfidence().score()).isEqualTo(95);
-        assertThat(result.examConfidence().label()).isEqualTo("READY");
-        assertThat(result.examConfidence().recommendation()).isEqualTo("BOOK_YOUR_EXAM");
+        assertThat(result.examConfidence().label()).isEqualTo(ConfidenceLabel.READY);
+        assertThat(result.examConfidence().recommendation()).isEqualTo(RecommendationKey.BOOK_YOUR_EXAM);
     }
 
     @Test
     void classifyConfidenceLabel_zeroScore_notReady() {
-        assertThat(ReadinessService.classifyConfidenceLabel(0)).isEqualTo("NOT_READY");
+        assertThat(ReadinessService.classifyConfidenceLabel(0)).isEqualTo(ConfidenceLabel.NOT_READY);
     }
 
     @Test
     void classifyConfidenceLabel_scoreBelowThirty_notReady() {
-        assertThat(ReadinessService.classifyConfidenceLabel(20)).isEqualTo("NOT_READY");
+        assertThat(ReadinessService.classifyConfidenceLabel(20)).isEqualTo(ConfidenceLabel.NOT_READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_boundary_29isNotReady_30isGettingThere() {
+        assertThat(ReadinessService.classifyConfidenceLabel(29)).isEqualTo(ConfidenceLabel.NOT_READY);
+        assertThat(ReadinessService.classifyConfidenceLabel(30)).isEqualTo(ConfidenceLabel.GETTING_THERE);
     }
 
     @Test
     void classifyConfidenceLabel_scoreThirtyToSixty_gettingThere() {
-        assertThat(ReadinessService.classifyConfidenceLabel(45)).isEqualTo("GETTING_THERE");
+        assertThat(ReadinessService.classifyConfidenceLabel(45)).isEqualTo(ConfidenceLabel.GETTING_THERE);
+    }
+
+    @Test
+    void classifyConfidenceLabel_boundary_59isGettingThere_60isAlmostReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(59)).isEqualTo(ConfidenceLabel.GETTING_THERE);
+        assertThat(ReadinessService.classifyConfidenceLabel(60)).isEqualTo(ConfidenceLabel.ALMOST_READY);
     }
 
     @Test
     void classifyConfidenceLabel_scoreSixtyToEighty_almostReady() {
-        assertThat(ReadinessService.classifyConfidenceLabel(70)).isEqualTo("ALMOST_READY");
+        assertThat(ReadinessService.classifyConfidenceLabel(70)).isEqualTo(ConfidenceLabel.ALMOST_READY);
+    }
+
+    @Test
+    void classifyConfidenceLabel_boundary_79isAlmostReady_80isReady() {
+        assertThat(ReadinessService.classifyConfidenceLabel(79)).isEqualTo(ConfidenceLabel.ALMOST_READY);
+        assertThat(ReadinessService.classifyConfidenceLabel(80)).isEqualTo(ConfidenceLabel.READY);
     }
 
     @Test
     void classifyConfidenceLabel_scoreEightyPlus_ready() {
-        assertThat(ReadinessService.classifyConfidenceLabel(85)).isEqualTo("READY");
+        assertThat(ReadinessService.classifyConfidenceLabel(85)).isEqualTo(ConfidenceLabel.READY);
     }
 
     // ─── RECOMMENDATION KEYS ───
 
     @Test
     void generateRecommendationKey_lowScore_keepPracticing() {
-        assertThat(ReadinessService.generateRecommendationKey(10)).isEqualTo("KEEP_PRACTICING");
-        assertThat(ReadinessService.generateRecommendationKey(39)).isEqualTo("KEEP_PRACTICING");
+        assertThat(ReadinessService.generateRecommendationKey(10)).isEqualTo(RecommendationKey.KEEP_PRACTICING);
+        assertThat(ReadinessService.generateRecommendationKey(39)).isEqualTo(RecommendationKey.KEEP_PRACTICING);
     }
 
     @Test
     void generateRecommendationKey_midScore_focusWeakDomains() {
-        assertThat(ReadinessService.generateRecommendationKey(40)).isEqualTo("FOCUS_WEAK_DOMAINS");
-        assertThat(ReadinessService.generateRecommendationKey(59)).isEqualTo("FOCUS_WEAK_DOMAINS");
+        assertThat(ReadinessService.generateRecommendationKey(40)).isEqualTo(RecommendationKey.FOCUS_WEAK_DOMAINS);
+        assertThat(ReadinessService.generateRecommendationKey(59)).isEqualTo(RecommendationKey.FOCUS_WEAK_DOMAINS);
     }
 
     @Test
     void generateRecommendationKey_highScore_passMoreExams() {
-        assertThat(ReadinessService.generateRecommendationKey(60)).isEqualTo("PASS_MORE_EXAMS");
-        assertThat(ReadinessService.generateRecommendationKey(79)).isEqualTo("PASS_MORE_EXAMS");
+        assertThat(ReadinessService.generateRecommendationKey(60)).isEqualTo(RecommendationKey.PASS_MORE_EXAMS);
+        assertThat(ReadinessService.generateRecommendationKey(79)).isEqualTo(RecommendationKey.PASS_MORE_EXAMS);
     }
 
     @Test
     void generateRecommendationKey_maxScore_bookYourExam() {
-        assertThat(ReadinessService.generateRecommendationKey(80)).isEqualTo("BOOK_YOUR_EXAM");
-        assertThat(ReadinessService.generateRecommendationKey(95)).isEqualTo("BOOK_YOUR_EXAM");
+        assertThat(ReadinessService.generateRecommendationKey(80)).isEqualTo(RecommendationKey.BOOK_YOUR_EXAM);
+        assertThat(ReadinessService.generateRecommendationKey(95)).isEqualTo(RecommendationKey.BOOK_YOUR_EXAM);
     }
 
     private com.passtheo.content.domain.entity.ExamAttempt mockExamAttempt(boolean passed, int correctCount) {
