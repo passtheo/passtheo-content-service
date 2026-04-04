@@ -2,7 +2,9 @@ package com.passtheo.content.unit;
 
 import com.passtheo.content.domain.entity.QuestionProgress;
 import com.passtheo.content.domain.enums.MasteryLevel;
+import com.passtheo.content.domain.enums.SessionType;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.integration.strapi.dto.StrapiRelationDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
@@ -59,7 +61,7 @@ class QuestionSelectionServiceTest {
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
                 .thenReturn(buildQuestions(DOMAIN, 10));
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 5, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, 5, LOCALE);
 
         assertEquals(5, selected.size());
     }
@@ -76,7 +78,7 @@ class QuestionSelectionServiceTest {
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
                 .thenReturn(buildQuestions(DOMAIN, 10));
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 5, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, 5, LOCALE);
 
         assertTrue(selected.contains("q-due-1"), "Due review question should be first");
         assertEquals(5, selected.size());
@@ -95,7 +97,7 @@ class QuestionSelectionServiceTest {
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
                 .thenReturn(buildQuestions(DOMAIN, 10));
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 5, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, 5, LOCALE);
 
         assertTrue(selected.contains("q-weak-1"));
     }
@@ -113,7 +115,7 @@ class QuestionSelectionServiceTest {
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
                 .thenReturn(buildQuestions(DOMAIN, 5));
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 3, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, 3, LOCALE);
 
         long distinctCount = selected.stream().distinct().count();
         assertEquals(selected.size(), distinctCount, "No duplicates allowed");
@@ -130,7 +132,7 @@ class QuestionSelectionServiceTest {
         when(strapiContentCache.getQuestionIds(eq(PRODUCT), eq(LOCALE)))
                 .thenReturn(List.of("q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9", "q10"));
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, null, 5, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, null, null, 5, LOCALE);
 
         assertEquals(5, selected.size());
     }
@@ -148,7 +150,7 @@ class QuestionSelectionServiceTest {
         when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Pageable.class)))
                 .thenReturn(List.of());
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 5, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, 5, LOCALE);
 
         assertTrue(selected.isEmpty());
     }
@@ -167,10 +169,63 @@ class QuestionSelectionServiceTest {
         when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Pageable.class)))
                 .thenReturn(List.of(familiar));
 
-        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, 1, LOCALE);
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, 1, LOCALE);
 
         assertFalse(selected.isEmpty());
         assertTrue(selected.contains("q-familiar-1"));
+    }
+
+    // ─── WEAK_REVIEW ───
+
+    @Test
+    void weakReview_skipsNewAndFamiliarQuestions() {
+        QuestionProgress due = buildProgress("q-due", Instant.now().minus(1, ChronoUnit.DAYS));
+        QuestionProgress weak1 = buildProgress("q-weak-1", null);
+        QuestionProgress weak2 = buildProgress("q-weak-2", null);
+        QuestionProgress weak3 = buildProgress("q-weak-3", null);
+        QuestionProgress weak4 = buildProgress("q-weak-4", null);
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>(List.of(due)));
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of(weak1, weak2, weak3, weak4));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN,
+                SessionType.WEAK_REVIEW, 10, LOCALE);
+
+        assertEquals(5, selected.size());
+        assertTrue(selected.contains("q-due"));
+        assertTrue(selected.contains("q-weak-1"));
+        // Should NOT contain any new or familiar questions
+    }
+
+    @Test
+    void weakReview_throwsWhenFewerThan5() {
+        QuestionProgress due = buildProgress("q-due", Instant.now().minus(1, ChronoUnit.DAYS));
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>(List.of(due)));
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        org.junit.jupiter.api.Assertions.assertThrows(AppException.class, () ->
+                service.selectQuestions(USER_ID, PRODUCT, DOMAIN,
+                        SessionType.WEAK_REVIEW, 10, LOCALE));
+    }
+
+    @Test
+    void practice_sessionType_usesAllFourPriorities() {
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>());
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN))
+                .thenReturn(Set.of());
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestions(DOMAIN, 10));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN,
+                SessionType.PRACTICE, 5, LOCALE);
+
+        assertEquals(5, selected.size());
     }
 
     // ─── Helpers ───

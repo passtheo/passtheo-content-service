@@ -7,6 +7,8 @@ import com.passtheo.content.domain.entity.QuestionProgress;
 import com.passtheo.content.domain.entity.SessionAnswer;
 import com.passtheo.content.domain.entity.StudySession;
 import com.passtheo.content.domain.enums.MasteryLevel;
+import com.passtheo.content.domain.enums.PlanDayStatus;
+import com.passtheo.content.domain.enums.PlanStatus;
 import com.passtheo.shared.outbox.entity.OutboxStatus;
 import com.passtheo.content.domain.enums.SessionStatus;
 import com.passtheo.content.domain.enums.SessionType;
@@ -28,6 +30,8 @@ import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
+import com.passtheo.content.repository.StudyPlanDayRepository;
+import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.content.repository.StudySessionRepository;
 import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.exception.AppException;
@@ -45,7 +49,8 @@ import jakarta.annotation.Nullable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.util.ArrayList;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +76,8 @@ public class PracticeSessionService {
     private final StreakService streakService;
     private final AchievementService achievementService;
     private final StrapiContentCache strapiContentCache;
+    private final StudyPlanRepository planRepository;
+    private final StudyPlanDayRepository planDayRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
@@ -85,6 +92,8 @@ public class PracticeSessionService {
      * @param streakService            streak management
      * @param achievementService       achievement checking
      * @param strapiContentCache       Strapi content cache
+     * @param planRepository           study plan repository for progress sync
+     * @param planDayRepository        study plan day repository for progress sync
      * @param outboxEventRepository    outbox event repository
      * @param objectMapper             JSON serializer
      */
@@ -96,6 +105,8 @@ public class PracticeSessionService {
                                   StreakService streakService,
                                   AchievementService achievementService,
                                   StrapiContentCache strapiContentCache,
+                                  StudyPlanRepository planRepository,
+                                  StudyPlanDayRepository planDayRepository,
                                   OutboxEventRepository outboxEventRepository,
                                   ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
@@ -106,6 +117,8 @@ public class PracticeSessionService {
         this.streakService = streakService;
         this.achievementService = achievementService;
         this.strapiContentCache = strapiContentCache;
+        this.planRepository = planRepository;
+        this.planDayRepository = planDayRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
@@ -137,7 +150,7 @@ public class PracticeSessionService {
         // Select questions using spaced repetition
         List<String> questionIds = questionSelectionService.selectQuestions(
                 userId, request.productCode(), request.domainCode(),
-                request.questionCount(), locale);
+                sessionType, request.questionCount(), locale);
 
         if (questionIds.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "No questions available for the selected criteria");
@@ -284,6 +297,9 @@ public class PracticeSessionService {
         }
         sessionRepository.save(session);
 
+        // Sync progress to active study plan day (if one exists for today)
+        incrementStudyPlanProgress(userId, session.getProductCode(), session.getDomainCode());
+
         LOG.debug("Answer graded: sessionId={}, questionId={}, correct={}, mastery={}→{}, timeTakenMs={}",
                 sessionId, request.strapiQuestionId(), isCorrect,
                 previousLevel, progress.getMasteryLevel(), request.timeTakenMs());
@@ -318,7 +334,7 @@ public class PracticeSessionService {
             if (allIds.isEmpty()) {
                 allIds = questionSelectionService.selectQuestions(
                         userId, session.getProductCode(), session.getDomainCode(),
-                        session.getTotalQuestions(), locale);
+                        SessionType.PRACTICE, session.getTotalQuestions(), locale);
             }
             if (questionOrder < allIds.size()) {
                 nextQuestion = loadQuestion(allIds.get(questionOrder), locale, questionOrder + 1);
@@ -346,6 +362,30 @@ public class PracticeSessionService {
                 nextQuestion,
                 newAchievements
         );
+    }
+
+    /**
+     * Increments the questionsCompleted counter on today's active study plan day,
+     * if one exists and matches the session's domain (or is an "ALL" mixed-review day).
+     */
+    private void incrementStudyPlanProgress(UUID userId, String productCode, String domainCode) {
+        planRepository.findByKeycloakUserIdAndProductCodeAndStatus(userId, productCode, PlanStatus.ACTIVE)
+                .ifPresent(plan -> planDayRepository.findByPlanIdAndPlanDate(
+                        plan.getId(), LocalDate.now(ZoneOffset.UTC))
+                        .ifPresent(day -> {
+                            if ("ALL".equals(day.getDomainCode())
+                                    || day.getDomainCode().equals(domainCode)) {
+                                day.setQuestionsCompleted(day.getQuestionsCompleted() + 1);
+                                if (day.getStatus() == PlanDayStatus.PENDING) {
+                                    day.setStatus(PlanDayStatus.IN_PROGRESS);
+                                }
+                                if (day.getQuestionsCompleted() >= day.getQuestionTarget()) {
+                                    day.setStatus(PlanDayStatus.COMPLETED);
+                                    day.setCompletedAt(Instant.now());
+                                }
+                                planDayRepository.save(day);
+                            }
+                        }));
     }
 
     private AnswerResultDto buildExistingAnswerResult(UUID userId, UUID sessionId,
@@ -480,7 +520,7 @@ public class PracticeSessionService {
             if (questionIds.isEmpty()) {
                 questionIds = questionSelectionService.selectQuestions(
                         userId, session.getProductCode(), session.getDomainCode(),
-                        session.getTotalQuestions(), locale);
+                        SessionType.PRACTICE, session.getTotalQuestions(), locale);
             }
             if (session.getAnsweredCount() < questionIds.size()) {
                 currentQuestion = loadQuestion(

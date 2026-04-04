@@ -197,7 +197,7 @@ public class StudyPlanService {
             day.setDayNumber(dayNumber);
             day.setPlanDate(planDate);
             day.setDomainCode("ALL");
-            day.setQuestionTarget(request.dailyQuestionTarget());
+            day.setQuestionTarget(resolvedDailyTarget);
             day.setQuestionsCompleted(0);
             day.setIncludeExam(true);
             day.setStatus(PlanDayStatus.PENDING);
@@ -217,7 +217,7 @@ public class StudyPlanService {
         plan.setTenantId(TenantContext.get());
         plan.setKeycloakUserId(userId);
         plan.setProductCode(request.productCode());
-        plan.setExamDate(request.examDate());
+        plan.setExamDate(resolvedExamDate);
         plan.setTotalDays(days.size());
         plan.setStatus(PlanStatus.ACTIVE);
         plan.setDailyQuestionTarget(resolvedDailyTarget);
@@ -235,6 +235,24 @@ public class StudyPlanService {
                 plan.getId(), userId, request.productCode(), days.size(), focusDomains);
 
         return toPlanDto(plan, days, 1);
+    }
+
+    /**
+     * Abandons the active study plan for a user/product, if one exists.
+     * Called when the user clears their exam date.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     */
+    @Transactional
+    public void abandonActivePlan(@Nonnull UUID userId, @Nonnull String productCode) {
+        planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+                        userId, productCode, PlanStatus.ACTIVE)
+                .ifPresent(plan -> {
+                    plan.setStatus(PlanStatus.ABANDONED);
+                    planRepository.save(plan);
+                    LOG.info("Abandoned study plan: userId={}, planId={}", userId, plan.getId());
+                });
     }
 
     /**
