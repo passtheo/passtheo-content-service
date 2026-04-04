@@ -228,9 +228,10 @@ public class ContentController {
                     double accuracy = agg != null && agg.getTotalAttempts() > 0
                             ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
                     int mastered = agg != null ? (int) agg.getMasteredCount() : 0;
+                    java.time.Instant lastPracticed = agg != null ? agg.getLastPracticed() : null;
 
                     var progress = new TopicWithProgressDto.TopicProgressOverlay(
-                            coverage, accuracy, mastered);
+                            coverage, accuracy, mastered, lastPracticed);
 
                     return new TopicWithProgressDto(t.code(), t.name(), t.difficulty(), questionCount, progress);
                 })
