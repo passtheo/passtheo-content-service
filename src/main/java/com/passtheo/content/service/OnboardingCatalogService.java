@@ -99,6 +99,7 @@ public class OnboardingCatalogService {
                 productType.description(),
                 productType.icon(),
                 productType.regulatoryBody(),
+                productType.websiteUrl(),
                 catalogProducts);
     }
 

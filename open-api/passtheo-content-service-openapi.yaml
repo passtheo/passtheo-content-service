@@ -1406,6 +1406,7 @@ components:
         description: { type: string }
         icon: { type: string }
         regulatoryBody: { type: string }
+        websiteUrl: { type: string, nullable: true }
         products:
           type: array
           items: { $ref: '#/components/schemas/CatalogProductDto' }
@@ -1746,11 +1747,12 @@ components:
           maximum: 95
         examConfidenceLabel:
           type: string
-          description: Human-readable confidence label
-          enum: [NOT_STARTED, NOT_READY, GETTING_THERE, ALMOST_READY, READY]
+          description: Machine-readable confidence label
+          enum: [NOT_READY, GETTING_THERE, ALMOST_READY, READY]
         recommendation:
           type: string
-          description: Actionable recommendation based on confidence level
+          description: Machine-readable recommendation key (Flutter maps to localized string)
+          enum: [KEEP_PRACTICING, FOCUS_WEAK_DOMAINS, PASS_MORE_EXAMS, BOOK_YOUR_EXAM]
         confidenceBreakdown:
           $ref: '#/components/schemas/ConfidenceBreakdownDto'
 
@@ -1766,7 +1768,10 @@ components:
         coverageMet: { type: boolean, description: "Whether coverage threshold is met" }
         accuracyMet: { type: boolean, description: "Whether accuracy threshold is met" }
         consecutivePasses: { type: integer, description: "Number of consecutive recent exam passes" }
-        weakDomains: { type: integer, description: "Number of domains classified as WEAK" }
+        weakDomainCodes:
+          type: array
+          description: Domain codes classified as WEAK (e.g. "snelheid")
+          items: { type: string }
 
     ReadinessSnapshotDto:
       type: object

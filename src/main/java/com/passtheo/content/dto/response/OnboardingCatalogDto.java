@@ -32,6 +32,7 @@ public record OnboardingCatalogDto(
         String description,
         String icon,
         String regulatoryBody,
+        String websiteUrl,
         List<CatalogProductDto> products
     ) {}
 

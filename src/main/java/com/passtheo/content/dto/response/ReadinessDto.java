@@ -44,6 +44,6 @@ public record ReadinessDto(
         boolean coverageMet,
         boolean accuracyMet,
         int consecutivePasses,
-        int weakDomains
+        List<String> weakDomainCodes
     ) {}
 }

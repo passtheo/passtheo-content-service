@@ -262,23 +262,23 @@ public class ReadinessService {
         }
 
         // Criterion 5: No weak domains (max 10)
-        int weakDomains = (int) domainStrengths.stream()
+        List<String> weakDomainCodes = domainStrengths.stream()
                 .filter(ds -> DomainStrength.WEAK.name().equals(ds.strength()))
-                .count();
-        int noWeakDomainsPoints = weakDomains == 0 ? NO_WEAK_DOMAINS_MAX_POINTS : 0;
+                .map(ReadinessScore.DomainStrengthValue::domainCode)
+                .toList();
+        int noWeakDomainsPoints = weakDomainCodes.isEmpty() ? NO_WEAK_DOMAINS_MAX_POINTS : 0;
 
         int rawTotal = coveragePoints + accuracyPoints + examConsistencyPoints
                 + avgScorePoints + noWeakDomainsPoints;
         int score = Math.min(rawTotal, CONFIDENCE_CAP);
 
-        String label = classifyConfidenceLabel(score, coverage);
-        String recommendation = generateRecommendation(label, coverageMet, accuracyMet,
-                consecutivePasses, weakDomains);
+        String label = classifyConfidenceLabel(score);
+        String recommendation = generateRecommendationKey(score);
 
         ExamConfidence.Breakdown breakdown = new ExamConfidence.Breakdown(
                 coveragePoints, accuracyPoints, examConsistencyPoints,
                 avgScorePoints, noWeakDomainsPoints,
-                coverageMet, accuracyMet, consecutivePasses, weakDomains);
+                coverageMet, accuracyMet, consecutivePasses, weakDomainCodes);
 
         return new ExamConfidence(score, label, recommendation, breakdown);
     }
@@ -309,16 +309,12 @@ public class ReadinessService {
     }
 
     /**
-     * Classifies the confidence score into a label.
+     * Classifies the confidence score into a machine-readable label.
      *
-     * @param score    the confidence score (0-95)
-     * @param coverage coverage percentage
-     * @return the confidence label
+     * @param score the confidence score (0-95)
+     * @return the confidence label enum key
      */
-    public static String classifyConfidenceLabel(int score, double coverage) {
-        if (coverage == 0.0) {
-            return "NOT_STARTED";
-        }
+    public static String classifyConfidenceLabel(int score) {
         if (score < 30) {
             return "NOT_READY";
         }
@@ -332,47 +328,23 @@ public class ReadinessService {
     }
 
     /**
-     * Generates an actionable recommendation based on the confidence label and breakdown.
+     * Returns a machine-readable recommendation key based on confidence score.
+     * Flutter maps these keys to localized strings via ARB files.
      *
-     * @param label             the confidence label
-     * @param coverageMet       whether coverage threshold is met
-     * @param accuracyMet       whether accuracy threshold is met
-     * @param consecutivePasses number of consecutive exam passes
-     * @param weakDomains       number of weak domains
-     * @return a recommendation string
+     * @param score the confidence score (0-95)
+     * @return the recommendation key
      */
-    static String generateRecommendation(String label, boolean coverageMet, boolean accuracyMet,
-                                          int consecutivePasses, int weakDomains) {
-        return switch (label) {
-            case "NOT_STARTED" -> "Start practicing to build your confidence. Try a few questions each day.";
-            case "NOT_READY" -> {
-                if (!coverageMet) {
-                    yield "Focus on covering more topics. You haven't seen enough questions yet.";
-                }
-                if (!accuracyMet) {
-                    yield "Review your incorrect answers and study the explanations carefully.";
-                }
-                yield "Keep practicing daily to build your exam readiness.";
-            }
-            case "GETTING_THERE" -> {
-                if (weakDomains > 0) {
-                    yield "You have " + weakDomains + " weak topic(s). Focus on those before taking more mock exams.";
-                }
-                if (consecutivePasses == 0) {
-                    yield "Try a mock exam to test your knowledge under exam conditions.";
-                }
-                yield "You're making progress! Keep studying and take another mock exam.";
-            }
-            case "ALMOST_READY" -> {
-                if (consecutivePasses < CONSISTENCY_HIGH_CONSECUTIVE) {
-                    yield "Pass " + (CONSISTENCY_HIGH_CONSECUTIVE - consecutivePasses)
-                            + " more mock exam(s) in a row to prove consistency.";
-                }
-                yield "You're close! One more strong mock exam should do it.";
-            }
-            case "READY" -> "You're well prepared. Book your exam when you're ready!";
-            default -> "Keep practicing to improve your confidence.";
-        };
+    public static String generateRecommendationKey(int score) {
+        if (score < 40) {
+            return "KEEP_PRACTICING";
+        }
+        if (score < 60) {
+            return "FOCUS_WEAK_DOMAINS";
+        }
+        if (score < 80) {
+            return "PASS_MORE_EXAMS";
+        }
+        return "BOOK_YOUR_EXAM";
     }
 
     /**

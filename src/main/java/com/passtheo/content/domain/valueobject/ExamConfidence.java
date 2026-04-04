@@ -26,7 +26,7 @@ public record ExamConfidence(
      * @param coverageMet           whether the coverage threshold is met
      * @param accuracyMet           whether the accuracy threshold is met
      * @param consecutivePasses     number of consecutive recent exam passes
-     * @param weakDomains           number of domains classified as WEAK
+     * @param weakDomainCodes       domain codes classified as WEAK (e.g. "snelheid")
      */
     public record Breakdown(
         int coveragePoints,
@@ -37,6 +37,6 @@ public record ExamConfidence(
         boolean coverageMet,
         boolean accuracyMet,
         int consecutivePasses,
-        int weakDomains
+        java.util.List<String> weakDomainCodes
     ) { }
 }

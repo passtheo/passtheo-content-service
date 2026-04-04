@@ -77,7 +77,7 @@ public class ProgressController {
                 new ReadinessDto.ConfidenceBreakdownDto(
                         cb.coveragePoints(), cb.accuracyPoints(), cb.examConsistencyPoints(),
                         cb.avgScorePoints(), cb.noWeakDomainsPoints(),
-                        cb.coverageMet(), cb.accuracyMet(), cb.consecutivePasses(), cb.weakDomains())
+                        cb.coverageMet(), cb.accuracyMet(), cb.consecutivePasses(), cb.weakDomainCodes())
         );
         return ResponseEntity.ok(ApiResponse.success(dto, MDC.get("traceId")));
     }
