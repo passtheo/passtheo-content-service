@@ -1739,6 +1739,34 @@ components:
               accuracyPercent: { type: number }
               coveragePercent: { type: number }
               strength: { type: string, enum: [UNKNOWN, WEAK, MODERATE, STRONG, MASTERED] }
+        examConfidence:
+          type: integer
+          description: Composite exam confidence score (0-95)
+          minimum: 0
+          maximum: 95
+        examConfidenceLabel:
+          type: string
+          description: Human-readable confidence label
+          enum: [NOT_STARTED, NOT_READY, GETTING_THERE, ALMOST_READY, READY]
+        recommendation:
+          type: string
+          description: Actionable recommendation based on confidence level
+        confidenceBreakdown:
+          $ref: '#/components/schemas/ConfidenceBreakdownDto'
+
+    ConfidenceBreakdownDto:
+      type: object
+      description: Per-criterion point breakdown for exam confidence
+      properties:
+        coveragePoints: { type: integer, description: "Points for coverage (max 20)" }
+        accuracyPoints: { type: integer, description: "Points for accuracy (max 25)" }
+        examConsistencyPoints: { type: integer, description: "Points for mock exam consistency (max 30)" }
+        avgScorePoints: { type: integer, description: "Points for average exam score (max 15)" }
+        noWeakDomainsPoints: { type: integer, description: "Points for no weak domains (max 10)" }
+        coverageMet: { type: boolean, description: "Whether coverage threshold is met" }
+        accuracyMet: { type: boolean, description: "Whether accuracy threshold is met" }
+        consecutivePasses: { type: integer, description: "Number of consecutive recent exam passes" }
+        weakDomains: { type: integer, description: "Number of domains classified as WEAK" }
 
     ReadinessSnapshotDto:
       type: object

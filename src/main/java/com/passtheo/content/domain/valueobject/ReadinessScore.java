@@ -19,6 +19,7 @@ import java.util.List;
  * @param domainStrengths    per-domain strength breakdown
  * @param examCountdownDays  days until scheduled exam (nullable if no exam date)
  * @param predictedReadyDate predicted date at which readiness reaches 80% (nullable)
+ * @param examConfidence     exam confidence assessment (nullable if not enough data)
  */
 public record ReadinessScore(
     double readinessScore,
@@ -32,7 +33,8 @@ public record ReadinessScore(
     int examPassScore,
     List<DomainStrengthValue> domainStrengths,
     Integer examCountdownDays,
-    java.time.LocalDate predictedReadyDate
+    java.time.LocalDate predictedReadyDate,
+    ExamConfidence examConfidence
 ) {
 
     /**

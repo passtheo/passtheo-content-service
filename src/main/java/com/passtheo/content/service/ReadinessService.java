@@ -1,6 +1,7 @@
 package com.passtheo.content.service;
 
 import com.passtheo.shared.core.client.UserServiceInternalClient;
+import com.passtheo.content.domain.entity.ExamAttempt;
 import com.passtheo.content.domain.enums.DomainStrength;
 import com.passtheo.content.domain.enums.ReadinessLabel;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
@@ -15,6 +16,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.passtheo.content.domain.valueobject.ExamConfidence;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -49,6 +53,21 @@ public class ReadinessService {
 
     private static final double READY_THRESHOLD = 80.0;
     private static final double DAILY_PROGRESS_ESTIMATE = 0.5;
+
+    // Exam confidence criteria thresholds
+    private static final int CONFIDENCE_CAP = 95;
+    private static final int COVERAGE_MAX_POINTS = 20;
+    private static final int ACCURACY_MAX_POINTS = 25;
+    private static final int EXAM_CONSISTENCY_MAX_POINTS = 30;
+    private static final int AVG_SCORE_MAX_POINTS = 15;
+    private static final int NO_WEAK_DOMAINS_MAX_POINTS = 10;
+    private static final double COVERAGE_HIGH_THRESHOLD = 90.0;
+    private static final double COVERAGE_MID_THRESHOLD = 70.0;
+    private static final double ACCURACY_HIGH_THRESHOLD = 88.0;
+    private static final double ACCURACY_MID_THRESHOLD = 80.0;
+    private static final int CONSISTENCY_HIGH_CONSECUTIVE = 3;
+    private static final double AVG_SCORE_HIGH_THRESHOLD = 46.0;
+    private static final double AVG_SCORE_MID_THRESHOLD = 44.0;
 
     private final QuestionProgressRepository progressRepository;
     private final ExamAttemptRepository examAttemptRepository;
@@ -160,11 +179,200 @@ public class ReadinessService {
             predictedReadyDate = today;
         }
 
+        ExamConfidence examConfidence = calculateExamConfidence(
+                userId, productCode, coverage, accuracy, passScore, domainStrengths);
+
         return new ReadinessScore(
                 readiness, coverage, accuracy, exam, label,
                 questionsAttempted, totalQuestions, bestExamScore, passScore,
-                domainStrengths, examCountdownDays, predictedReadyDate
+                domainStrengths, examCountdownDays, predictedReadyDate, examConfidence
         );
+    }
+
+    /**
+     * Calculates the composite exam confidence score (0-95) from 5 weighted criteria.
+     *
+     * <ul>
+     *   <li>Coverage (max 20): &ge;90% &rarr; 20, 70-89% &rarr; 10, &lt;70% &rarr; 0</li>
+     *   <li>Accuracy (max 25): &ge;88% &rarr; 25, 80-87% &rarr; 15, &lt;80% &rarr; 0</li>
+     *   <li>Mock consistency (max 30): 3+ consecutive passes &rarr; 30, 1-2 &rarr; 15, 0 &rarr; 0</li>
+     *   <li>Average score (max 15): avg &ge;46 &rarr; 15, avg &ge;44 &rarr; 10, &lt;44 &rarr; 0</li>
+     *   <li>No weak domains (max 10): 0 WEAK &rarr; 10, any WEAK &rarr; 0</li>
+     * </ul>
+     *
+     * @param userId          the user's Keycloak ID
+     * @param productCode     the product code
+     * @param coverage        coverage percentage (0-100)
+     * @param accuracy        accuracy percentage (0-100)
+     * @param passScore       the pass score threshold
+     * @param domainStrengths per-domain strength breakdown
+     * @return the exam confidence assessment
+     */
+    ExamConfidence calculateExamConfidence(UUID userId, String productCode,
+                                           double coverage, double accuracy, int passScore,
+                                           List<ReadinessScore.DomainStrengthValue> domainStrengths) {
+        // Criterion 1: Coverage (max 20)
+        int coveragePoints;
+        boolean coverageMet;
+        if (coverage >= COVERAGE_HIGH_THRESHOLD) {
+            coveragePoints = COVERAGE_MAX_POINTS;
+            coverageMet = true;
+        } else if (coverage >= COVERAGE_MID_THRESHOLD) {
+            coveragePoints = 10;
+            coverageMet = true;
+        } else {
+            coveragePoints = 0;
+            coverageMet = false;
+        }
+
+        // Criterion 2: Accuracy (max 25)
+        int accuracyPoints;
+        boolean accuracyMet;
+        if (accuracy >= ACCURACY_HIGH_THRESHOLD) {
+            accuracyPoints = ACCURACY_MAX_POINTS;
+            accuracyMet = true;
+        } else if (accuracy >= ACCURACY_MID_THRESHOLD) {
+            accuracyPoints = 15;
+            accuracyMet = true;
+        } else {
+            accuracyPoints = 0;
+            accuracyMet = false;
+        }
+
+        // Criterion 3: Mock exam consistency — consecutive passes (max 30)
+        int consecutivePasses = countConsecutivePasses(userId, productCode, passScore);
+        int examConsistencyPoints;
+        if (consecutivePasses >= CONSISTENCY_HIGH_CONSECUTIVE) {
+            examConsistencyPoints = EXAM_CONSISTENCY_MAX_POINTS;
+        } else if (consecutivePasses >= 1) {
+            examConsistencyPoints = 15;
+        } else {
+            examConsistencyPoints = 0;
+        }
+
+        // Criterion 4: Average exam score (max 15)
+        Double avgScore = examAttemptRepository.findAverageScore(userId, productCode);
+        int avgScorePoints;
+        if (avgScore != null && avgScore >= AVG_SCORE_HIGH_THRESHOLD) {
+            avgScorePoints = AVG_SCORE_MAX_POINTS;
+        } else if (avgScore != null && avgScore >= AVG_SCORE_MID_THRESHOLD) {
+            avgScorePoints = 10;
+        } else {
+            avgScorePoints = 0;
+        }
+
+        // Criterion 5: No weak domains (max 10)
+        int weakDomains = (int) domainStrengths.stream()
+                .filter(ds -> DomainStrength.WEAK.name().equals(ds.strength()))
+                .count();
+        int noWeakDomainsPoints = weakDomains == 0 ? NO_WEAK_DOMAINS_MAX_POINTS : 0;
+
+        int rawTotal = coveragePoints + accuracyPoints + examConsistencyPoints
+                + avgScorePoints + noWeakDomainsPoints;
+        int score = Math.min(rawTotal, CONFIDENCE_CAP);
+
+        String label = classifyConfidenceLabel(score, coverage);
+        String recommendation = generateRecommendation(label, coverageMet, accuracyMet,
+                consecutivePasses, weakDomains);
+
+        ExamConfidence.Breakdown breakdown = new ExamConfidence.Breakdown(
+                coveragePoints, accuracyPoints, examConsistencyPoints,
+                avgScorePoints, noWeakDomainsPoints,
+                coverageMet, accuracyMet, consecutivePasses, weakDomains);
+
+        return new ExamConfidence(score, label, recommendation, breakdown);
+    }
+
+    /**
+     * Counts consecutive recent exam passes (scored at or above passScore), from most recent backward.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     * @param passScore   the pass score threshold
+     * @return number of consecutive passes from the most recent attempt
+     */
+    private int countConsecutivePasses(UUID userId, String productCode, int passScore) {
+        List<ExamAttempt> recentExams = examAttemptRepository
+                .findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                        userId, productCode, PageRequest.of(0, 20))
+                .getContent();
+
+        int count = 0;
+        for (ExamAttempt exam : recentExams) {
+            if (exam.isPassed() && exam.getCorrectCount() >= passScore) {
+                count++;
+            } else {
+                break;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Classifies the confidence score into a label.
+     *
+     * @param score    the confidence score (0-95)
+     * @param coverage coverage percentage
+     * @return the confidence label
+     */
+    public static String classifyConfidenceLabel(int score, double coverage) {
+        if (coverage == 0.0) {
+            return "NOT_STARTED";
+        }
+        if (score < 30) {
+            return "NOT_READY";
+        }
+        if (score < 60) {
+            return "GETTING_THERE";
+        }
+        if (score < 80) {
+            return "ALMOST_READY";
+        }
+        return "READY";
+    }
+
+    /**
+     * Generates an actionable recommendation based on the confidence label and breakdown.
+     *
+     * @param label             the confidence label
+     * @param coverageMet       whether coverage threshold is met
+     * @param accuracyMet       whether accuracy threshold is met
+     * @param consecutivePasses number of consecutive exam passes
+     * @param weakDomains       number of weak domains
+     * @return a recommendation string
+     */
+    static String generateRecommendation(String label, boolean coverageMet, boolean accuracyMet,
+                                          int consecutivePasses, int weakDomains) {
+        return switch (label) {
+            case "NOT_STARTED" -> "Start practicing to build your confidence. Try a few questions each day.";
+            case "NOT_READY" -> {
+                if (!coverageMet) {
+                    yield "Focus on covering more topics. You haven't seen enough questions yet.";
+                }
+                if (!accuracyMet) {
+                    yield "Review your incorrect answers and study the explanations carefully.";
+                }
+                yield "Keep practicing daily to build your exam readiness.";
+            }
+            case "GETTING_THERE" -> {
+                if (weakDomains > 0) {
+                    yield "You have " + weakDomains + " weak topic(s). Focus on those before taking more mock exams.";
+                }
+                if (consecutivePasses == 0) {
+                    yield "Try a mock exam to test your knowledge under exam conditions.";
+                }
+                yield "You're making progress! Keep studying and take another mock exam.";
+            }
+            case "ALMOST_READY" -> {
+                if (consecutivePasses < CONSISTENCY_HIGH_CONSECUTIVE) {
+                    yield "Pass " + (CONSISTENCY_HIGH_CONSECUTIVE - consecutivePasses)
+                            + " more mock exam(s) in a row to prove consistency.";
+                }
+                yield "You're close! One more strong mock exam should do it.";
+            }
+            case "READY" -> "You're well prepared. Book your exam when you're ready!";
+            default -> "Keep practicing to improve your confidence.";
+        };
     }
 
     /**

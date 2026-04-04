@@ -86,6 +86,17 @@ public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, UUID> 
     Optional<ExamAttempt> findByIdAndKeycloakUserId(@Nonnull UUID id, @Nonnull UUID keycloakUserId);
 
     /**
+     * Computes the average correctCount across all exam attempts for a user/product.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return average correct count, or null if no exams taken
+     */
+    @Query("SELECT AVG(ea.correctCount) FROM ExamAttempt ea WHERE ea.keycloakUserId = :userId " +
+           "AND ea.productCode = :productCode")
+    Double findAverageScore(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
+
+    /**
      * Deletes all exams for a user (GDPR).
      *
      * @param keycloakUserId the user's Keycloak ID
