@@ -238,6 +238,24 @@ public class StudyPlanService {
     }
 
     /**
+     * Abandons the active study plan for a user/product, if one exists.
+     * Called when the user clears their exam date.
+     *
+     * @param userId      the user's Keycloak ID
+     * @param productCode the product code
+     */
+    @Transactional
+    public void abandonActivePlan(@Nonnull UUID userId, @Nonnull String productCode) {
+        planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+                        userId, productCode, PlanStatus.ACTIVE)
+                .ifPresent(plan -> {
+                    plan.setStatus(PlanStatus.ABANDONED);
+                    planRepository.save(plan);
+                    LOG.info("Abandoned study plan: userId={}, planId={}", userId, plan.getId());
+                });
+    }
+
+    /**
      * Gets the active study plan for a user/product.
      *
      * @param userId      the user's Keycloak ID

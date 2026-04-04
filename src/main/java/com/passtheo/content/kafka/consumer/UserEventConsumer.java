@@ -14,9 +14,9 @@ import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.content.repository.TopicProgressRepository;
 import com.passtheo.content.service.StudyPlanService;
 import com.passtheo.shared.core.context.TenantContext;
+import com.passtheo.shared.events.config.KafkaTopic;
 import jakarta.annotation.Nonnull;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -35,6 +35,9 @@ import java.util.UUID;
 public class UserEventConsumer {
 
     private static final Logger LOG = LoggerFactory.getLogger(UserEventConsumer.class);
+
+    /** Default locale for auto-generated study plans. */
+    private static final String DEFAULT_LOCALE = "nl";
 
     private final ObjectMapper objectMapper;
     private final QuestionProgressRepository progressRepository;
@@ -89,7 +92,7 @@ public class UserEventConsumer {
      * @param record the Kafka record
      * @param ack    the acknowledgment
      */
-    @KafkaListener(topics = "passtheo.user", groupId = "passtheo-content-service")
+    @KafkaListener(topics = KafkaTopic.USER_EVENTS, groupId = "passtheo-content-service")
     @Transactional
     public void onUserEvent(@Nonnull ConsumerRecord<String, String> record,
                             @Nonnull Acknowledgment ack) {
@@ -154,7 +157,7 @@ public class UserEventConsumer {
             TenantContext.set(tenantId);
             try {
                 studyPlanService.generatePlan(keycloakUserId,
-                        new GenerateStudyPlanRequest(productCode, examDate, null), "nl");
+                        new GenerateStudyPlanRequest(productCode, examDate, null), DEFAULT_LOCALE);
             } finally {
                 TenantContext.clear();
             }
@@ -189,7 +192,7 @@ public class UserEventConsumer {
         TenantContext.set(tenantId);
         try {
             studyPlanService.generatePlan(keycloakUserId,
-                    new GenerateStudyPlanRequest(productCode, examDate, null), "nl");
+                    new GenerateStudyPlanRequest(productCode, examDate, null), DEFAULT_LOCALE);
         } finally {
             TenantContext.clear();
         }
@@ -212,17 +215,11 @@ public class UserEventConsumer {
         UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
         UUID tenantId = UUID.fromString(tenantIdStr);
 
+        LOG.info("Abandoning study plan after exam date cleared: userId={}, productCode={}",
+                keycloakUserId, productCode);
         TenantContext.set(tenantId);
         try {
-            planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
-                            keycloakUserId, productCode, PlanStatus.ACTIVE)
-                    .ifPresent(plan -> {
-                        plan.setStatus(PlanStatus.ABANDONED);
-                        plan.setUpdatedAt(Instant.now());
-                        planRepository.save(plan);
-                        LOG.info("Abandoned study plan after exam date cleared: userId={}, planId={}",
-                                keycloakUserId, plan.getId());
-                    });
+            studyPlanService.abandonActivePlan(keycloakUserId, productCode);
         } finally {
             TenantContext.clear();
         }
