@@ -1,7 +1,7 @@
 package com.passtheo.content.domain.enums;
 
 /**
- * The 6 question interaction types matching the CBR exam format (April 2025).
+ * The 8 question interaction types supported by the platform.
  */
 public enum InteractionType {
 
@@ -21,7 +21,13 @@ public enum InteractionType {
     DRAG_CHECKMARK("drag_checkmark"),
 
     /** Drag numbers in correct order. */
-    DRAG_NUMBERS("drag_numbers");
+    DRAG_NUMBERS("drag_numbers"),
+
+    /** Select ALL correct from 2-5 options (all-or-nothing). */
+    MULTIPLE_RESPONSE("multiple_response"),
+
+    /** Video scenario + select 1 from 2-4 options. */
+    VIDEO_QUESTION("video_question");
 
     private final String strapiValue;
 

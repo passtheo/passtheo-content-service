@@ -67,7 +67,7 @@ public record StrapiQuestionDto(
     ) {}
 
     /**
-     * Image region for tap_on_image questions.
+     * Image region for tap_on_image (isCorrect) and drag_numbers with image (correctValue).
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ImageRegionDto(
@@ -78,7 +78,7 @@ public record StrapiQuestionDto(
         double widthPercent,
         double heightPercent,
         boolean isCorrect,
-        int sortOrder
+        String correctValue
     ) {}
 
     /**

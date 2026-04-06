@@ -15,7 +15,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit tests for AnswerProcessingService — grades all 6 interaction types
+ * Unit tests for AnswerProcessingService — grades all 8 interaction types
  * and updates spaced repetition mastery levels.
  */
 class AnswerProcessingServiceTest {
@@ -98,8 +98,8 @@ class AnswerProcessingServiceTest {
     @Test
     void gradeAnswer_tapOnImage_correctRegion_returnsTrue() {
         StrapiQuestionDto question = buildQuestion("tap_on_image", null,
-                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Region A", 10, 20, 30, 40, true, 1),
-                        new StrapiQuestionDto.ImageRegionDto(2, "Region B", 50, 60, 30, 40, false, 2)),
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Region A", 10, 20, 30, 40, true, null),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Region B", 50, 60, 30, 40, false, null)),
                 null);
         assertThat(service.gradeAnswer(question, Map.of("tappedRegionId", "1"))).isTrue();
     }
@@ -107,8 +107,8 @@ class AnswerProcessingServiceTest {
     @Test
     void gradeAnswer_tapOnImage_wrongRegion_returnsFalse() {
         StrapiQuestionDto question = buildQuestion("tap_on_image", null,
-                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Region A", 10, 20, 30, 40, true, 1),
-                        new StrapiQuestionDto.ImageRegionDto(2, "Region B", 50, 60, 30, 40, false, 2)),
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Region A", 10, 20, 30, 40, true, null),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Region B", 50, 60, 30, 40, false, null)),
                 null);
         assertThat(service.gradeAnswer(question, Map.of("tappedRegionId", "2"))).isFalse();
     }
@@ -148,6 +148,145 @@ class AnswerProcessingServiceTest {
                 List.of(new StrapiQuestionDto.DragTargetDto(1, "Pos 1", "1", false, 1, null),
                         new StrapiQuestionDto.DragTargetDto(2, "Pos 2", "2", false, 2, null)));
         assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "2", "2", "1")))).isFalse();
+    }
+
+    // ─── MULTIPLE RESPONSE ───
+
+    @Test
+    void gradeAnswer_multipleResponse_allCorrectSelected_returnsTrue() {
+        StrapiQuestionDto question = buildQuestion("multiple_response",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "A", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "B", null, false, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(3, "C", null, true, 2),
+                        new StrapiQuestionDto.AnswerOptionDto(4, "D", null, false, 3)),
+                null, null);
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionIds", List.of("1", "3")))).isTrue();
+    }
+
+    @Test
+    void gradeAnswer_multipleResponse_missingCorrectOption_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("multiple_response",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "A", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "B", null, false, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(3, "C", null, true, 2)),
+                null, null);
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionIds", List.of("1")))).isFalse();
+    }
+
+    @Test
+    void gradeAnswer_multipleResponse_extraIncorrectOption_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("multiple_response",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "A", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "B", null, false, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(3, "C", null, true, 2)),
+                null, null);
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionIds", List.of("1", "2", "3")))).isFalse();
+    }
+
+    @Test
+    void gradeAnswer_multipleResponse_nullAnswer_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("multiple_response",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "A", null, true, 0)),
+                null, null);
+        assertThat(service.gradeAnswer(question, Map.of())).isFalse();
+    }
+
+    // ─── VIDEO QUESTION ───
+
+    @Test
+    void gradeAnswer_videoQuestion_correctOption_returnsTrue() {
+        StrapiQuestionDto question = buildQuestion("video_question",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "Right", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "Wrong", null, false, 1)),
+                null, null);
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionId", "1"))).isTrue();
+    }
+
+    @Test
+    void gradeAnswer_videoQuestion_wrongOption_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("video_question",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "Right", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "Wrong", null, false, 1)),
+                null, null);
+        assertThat(service.gradeAnswer(question, Map.of("selectedOptionId", "2"))).isFalse();
+    }
+
+    // ─── DRAG NUMBERS WITH IMAGE REGIONS ───
+
+    @Test
+    void gradeAnswer_dragNumbers_imageRegions_correctOrder_returnsTrue() {
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Car A", 20, 70, 14, 16, false, "3"),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Car B", 60, 40, 16, 14, false, "2"),
+                        new StrapiQuestionDto.ImageRegionDto(3, "Car C", 30, 10, 14, 16, false, "1")),
+                null);
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "3", "2", "2", "3", "1")))).isTrue();
+    }
+
+    @Test
+    void gradeAnswer_dragNumbers_imageRegions_wrongOrder_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Car A", 20, 70, 14, 16, false, "3"),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Car B", 60, 40, 16, 14, false, "2"),
+                        new StrapiQuestionDto.ImageRegionDto(3, "Car C", 30, 10, 14, 16, false, "1")),
+                null);
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "1", "2", "2", "3", "3")))).isFalse();
+    }
+
+    @Test
+    void gradeAnswer_dragNumbers_imageRegions_missingPlacement_returnsFalse() {
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Car A", 20, 70, 14, 16, false, "2"),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Car B", 60, 40, 16, 14, false, "1")),
+                null);
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "2")))).isFalse();
+    }
+
+    @Test
+    void gradeAnswer_dragNumbers_prefersDragTargetsOverImageRegions() {
+        // When both dragTargets and imageRegions exist, use dragTargets
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(10, "Region", 20, 70, 14, 16, false, "9")),
+                List.of(new StrapiQuestionDto.DragTargetDto(1, "Pos", "1", false, 0, null)));
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "1")))).isTrue();
+    }
+
+    // ─── BUILD CORRECT ANSWER ───
+
+    @Test
+    void buildCorrectAnswer_multipleResponse_returnsAllCorrectIds() {
+        StrapiQuestionDto question = buildQuestion("multiple_response",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(1, "A", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(2, "B", null, false, 1),
+                        new StrapiQuestionDto.AnswerOptionDto(3, "C", null, true, 2)),
+                null, null);
+        Map<String, Object> correct = service.buildCorrectAnswer(question);
+        assertThat(correct).containsKey("selectedOptionIds");
+        @SuppressWarnings("unchecked")
+        List<String> ids = (List<String>) correct.get("selectedOptionIds");
+        assertThat(ids).containsExactly("1", "3");
+    }
+
+    @Test
+    void buildCorrectAnswer_videoQuestion_returnsSingleCorrectId() {
+        StrapiQuestionDto question = buildQuestion("video_question",
+                List.of(new StrapiQuestionDto.AnswerOptionDto(5, "Right", null, true, 0),
+                        new StrapiQuestionDto.AnswerOptionDto(6, "Wrong", null, false, 1)),
+                null, null);
+        Map<String, Object> correct = service.buildCorrectAnswer(question);
+        assertThat(correct.get("selectedOptionId")).isEqualTo("5");
+    }
+
+    @Test
+    void buildCorrectAnswer_dragNumbers_imageRegions_returnsPlacementsFromRegions() {
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(1, "Car A", 20, 70, 14, 16, false, "2"),
+                        new StrapiQuestionDto.ImageRegionDto(2, "Car B", 60, 40, 16, 14, false, "1")),
+                null);
+        Map<String, Object> correct = service.buildCorrectAnswer(question);
+        @SuppressWarnings("unchecked")
+        Map<String, String> placements = (Map<String, String>) correct.get("placements");
+        assertThat(placements).containsEntry("1", "2").containsEntry("2", "1");
     }
 
     // ─── MASTERY TRANSITIONS ───
