@@ -132,15 +132,16 @@ public class AnswerProcessingService {
                 yield Map.of("selectedTargetIds", correctIds);
             }
             case "drag_numbers" -> {
+                // Image regions take priority (matches frontend DragNumbersRenderer._items).
                 Map<String, String> placements = new java.util.LinkedHashMap<>();
-                if (question.dragTargets() != null && !question.dragTargets().isEmpty()) {
-                    question.dragTargets().stream()
-                            .filter(dt -> dt.correctValue() != null)
-                            .forEach(dt -> placements.put(String.valueOf(dt.id()), dt.correctValue()));
-                } else if (question.imageRegions() != null) {
+                if (question.imageRegions() != null && !question.imageRegions().isEmpty()) {
                     question.imageRegions().stream()
                             .filter(r -> r.correctValue() != null)
                             .forEach(r -> placements.put(String.valueOf(r.id()), r.correctValue()));
+                } else if (question.dragTargets() != null) {
+                    question.dragTargets().stream()
+                            .filter(dt -> dt.correctValue() != null)
+                            .forEach(dt -> placements.put(String.valueOf(dt.id()), dt.correctValue()));
                 }
                 yield Map.of("placements", (Object) placements);
             }
@@ -227,9 +228,9 @@ public class AnswerProcessingService {
         }
         Map<?, ?> placements = (Map<?, ?>) placementsObj;
 
-        // Image-based ordering: use imageRegions when dragTargets is absent
-        if ((question.dragTargets() == null || question.dragTargets().isEmpty())
-                && question.imageRegions() != null && !question.imageRegions().isEmpty()) {
+        // Image-based ordering: use imageRegions when present (matches frontend
+        // DragNumbersRenderer._items which also prefers imageRegions over dragTargets).
+        if (question.imageRegions() != null && !question.imageRegions().isEmpty()) {
             for (StrapiQuestionDto.ImageRegionDto region : question.imageRegions()) {
                 if (region.correctValue() == null) {
                     continue;
@@ -242,7 +243,7 @@ public class AnswerProcessingService {
             return true;
         }
 
-        // Text-based ordering: use dragTargets
+        // Text-based ordering: use dragTargets (no image regions)
         if (question.dragTargets() == null) {
             return false;
         }
