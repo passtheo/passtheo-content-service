@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -297,7 +298,7 @@ public class ContentController {
                 .map(l -> new LessonDto(
                         l.title(), l.slug(),
                         l.sections() != null ? l.sections().stream()
-                                .filter(s -> s != null)
+                                .filter(Objects::nonNull)
                                 .map(s -> new LessonSectionDto(
                                         s.heading(), s.body(), s.tip(),
                                         s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
