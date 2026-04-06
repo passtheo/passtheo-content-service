@@ -132,18 +132,11 @@ public class AnswerProcessingService {
                 yield Map.of("selectedTargetIds", correctIds);
             }
             case "drag_numbers" -> {
-                // Image regions take priority (matches frontend DragNumbersRenderer._items).
+                // Frontend uses imageRegion IDs when present (DragNumbersRenderer._items).
+                // correctValue may live on imageRegions or dragTargets depending on
+                // how the content was authored in Strapi.
                 Map<String, String> placements = new java.util.LinkedHashMap<>();
-                if (question.imageRegions() != null && !question.imageRegions().isEmpty()) {
-                    question.imageRegions().stream()
-                            .filter(r -> r.correctValue() != null)
-                            .forEach(r -> placements.put(String.valueOf(r.id()), r.correctValue()));
-                } else if (question.dragTargets() != null) {
-                    question.dragTargets().stream()
-                            .filter(dt -> dt.correctValue() != null)
-                            .forEach(dt -> placements.put(String.valueOf(dt.id()), dt.correctValue()));
-                }
-                yield Map.of("placements", (Object) placements);
+                yield Map.of("placements", (Object) buildDragNumbersPlacements(question, placements));
             }
             case "multiple_response" -> {
                 List<String> correctIds = question.answerOptions() != null
@@ -226,37 +219,66 @@ public class AnswerProcessingService {
         if (placementsObj == null) {
             return false;
         }
-        Map<?, ?> placements = (Map<?, ?>) placementsObj;
+        Map<?, ?> userPlacements = (Map<?, ?>) placementsObj;
 
-        // Image-based ordering: use imageRegions when present (matches frontend
-        // DragNumbersRenderer._items which also prefers imageRegions over dragTargets).
-        if (question.imageRegions() != null && !question.imageRegions().isEmpty()) {
-            for (StrapiQuestionDto.ImageRegionDto region : question.imageRegions()) {
-                if (region.correctValue() == null) {
-                    continue;
-                }
-                Object placed = placements.get(String.valueOf(region.id()));
-                if (placed == null || !region.correctValue().equals(placed.toString())) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        // Text-based ordering: use dragTargets (no image regions)
-        if (question.dragTargets() == null) {
+        // Build the expected placements using the same logic as buildCorrectAnswer.
+        Map<String, String> expected = buildDragNumbersPlacements(question, new java.util.LinkedHashMap<>());
+        if (expected.isEmpty()) {
+            LOG.warn("drag_numbers question {} has no resolvable correct placements", question.documentId());
             return false;
         }
-        for (StrapiQuestionDto.DragTargetDto target : question.dragTargets()) {
-            if (target.correctValue() == null) {
-                continue;
-            }
-            Object placed = placements.get(String.valueOf(target.id()));
-            if (placed == null || !target.correctValue().equals(placed.toString())) {
+
+        for (Map.Entry<String, String> entry : expected.entrySet()) {
+            Object placed = userPlacements.get(entry.getKey());
+            if (placed == null || !entry.getValue().equals(placed.toString())) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * Resolves the correct placements map for a drag_numbers question.
+     * Frontend always uses imageRegion IDs when imageRegions exist, so the returned
+     * map keys must match what the frontend sends. correctValue may live on
+     * imageRegions directly or on dragTargets (positional mapping).
+     *
+     * @param question   the Strapi question
+     * @param placements map to populate (returned for convenience)
+     * @return the populated placements map
+     */
+    private Map<String, String> buildDragNumbersPlacements(StrapiQuestionDto question,
+                                                            Map<String, String> placements) {
+        boolean hasRegions = question.imageRegions() != null && !question.imageRegions().isEmpty();
+        boolean hasTargets = question.dragTargets() != null && !question.dragTargets().isEmpty();
+
+        if (hasRegions) {
+            boolean regionsHaveCorrectValue = question.imageRegions().stream()
+                    .anyMatch(r -> r.correctValue() != null);
+
+            if (regionsHaveCorrectValue) {
+                // Pattern A: imageRegions carry correctValue directly.
+                question.imageRegions().stream()
+                        .filter(r -> r.correctValue() != null)
+                        .forEach(r -> placements.put(String.valueOf(r.id()), r.correctValue()));
+            } else if (hasTargets) {
+                // Pattern B: imageRegions define tap areas, dragTargets hold correctValue.
+                // Map positionally — imageRegion[i] corresponds to dragTarget[i].
+                int count = Math.min(question.imageRegions().size(), question.dragTargets().size());
+                for (int i = 0; i < count; i++) {
+                    String correctValue = question.dragTargets().get(i).correctValue();
+                    if (correctValue != null) {
+                        placements.put(String.valueOf(question.imageRegions().get(i).id()), correctValue);
+                    }
+                }
+            }
+        } else if (hasTargets) {
+            // Text-only: no imageRegions, use dragTarget IDs directly.
+            question.dragTargets().stream()
+                    .filter(dt -> dt.correctValue() != null)
+                    .forEach(dt -> placements.put(String.valueOf(dt.id()), dt.correctValue()));
+        }
+        return placements;
     }
 
     @SuppressWarnings("unchecked")
