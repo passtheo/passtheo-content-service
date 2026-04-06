@@ -264,6 +264,59 @@ class QuestionSelectionServiceTest {
         assertEquals(5, selected.size());
     }
 
+    // ─── Catch-all (P5) ───
+
+    @Test
+    void catchAll_includesMasteredQuestionsNotCoveredByP1toP4() {
+        // Scenario: topic has 12 questions, user has seen all of them.
+        // P1 returns 2 due reviews, P2 returns 1 weak, P3 returns 0 new (all seen),
+        // P4 returns 2 familiar. Without P5, only 5 selected out of 12.
+        // With P5, the remaining 7 (MASTERED, not-yet-due) are added.
+        QuestionProgress due1 = buildProgress("doc-domain-1", Instant.now().minus(1, ChronoUnit.DAYS));
+        QuestionProgress due2 = buildProgress("doc-domain-2", Instant.now().minus(2, ChronoUnit.DAYS));
+        QuestionProgress weak = buildProgress("doc-domain-3", null);
+        weak.setConsecutiveCorrect(1);
+        QuestionProgress fam1 = buildProgress("doc-domain-4", Instant.now().plus(3, ChronoUnit.DAYS));
+        QuestionProgress fam2 = buildProgress("doc-domain-5", Instant.now().plus(5, ChronoUnit.DAYS));
+
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), eq(TOPIC), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>(List.of(due1, due2)));
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), eq(TOPIC), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of(weak));
+        // All 12 questions have been seen
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, TOPIC))
+                .thenReturn(Set.of("doc-domain-1", "doc-domain-2", "doc-domain-3", "doc-domain-4",
+                        "doc-domain-5", "doc-domain-6", "doc-domain-7", "doc-domain-8",
+                        "doc-domain-9", "doc-domain-10", "doc-domain-11", "doc-domain-12"));
+        when(strapiContentCache.getQuestionsByTopic(eq(TOPIC), eq(LOCALE)))
+                .thenReturn(buildQuestions("domain", 12));
+        when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), eq(TOPIC), any(Pageable.class)))
+                .thenReturn(List.of(fam1, fam2));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, TOPIC, SessionType.PRACTICE, 12, LOCALE);
+
+        assertEquals(12, selected.size(), "All 12 topic questions should be selected");
+        long distinctCount = selected.stream().distinct().count();
+        assertEquals(12, distinctCount, "No duplicates");
+    }
+
+    @Test
+    void catchAll_doesNotExceedRequestedCount() {
+        // Domain-level practice requesting 5 out of 10 — P5 should NOT overshoot count.
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>());
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
+                .thenReturn(Set.of());
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestions(DOMAIN, 10));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, SessionType.PRACTICE, 5, LOCALE);
+
+        assertEquals(5, selected.size(), "Should not exceed requested count");
+    }
+
     // ─── Helpers ───
 
     private QuestionProgress buildProgress(String questionId, Instant nextReviewAt) {

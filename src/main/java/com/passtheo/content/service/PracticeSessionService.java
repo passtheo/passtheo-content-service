@@ -151,11 +151,15 @@ public class PracticeSessionService {
                     "Not enough questions available. At least 5 required.");
         }
 
+        // When practising a specific topic, use ALL available questions — the user
+        // expects to go through every question in the topic, not a capped subset.
+        int effectiveCount = hasTopicCode ? availableCount : request.questionCount();
+
         // Select questions using spaced repetition — filter by topic when provided.
         List<String> questionIds = questionSelectionService.selectQuestions(
                 userId, request.productCode(), request.domainCode(),
                 hasTopicCode ? topicCode : null,
-                sessionType, request.questionCount(), locale);
+                sessionType, effectiveCount, locale);
 
         if (questionIds.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "No questions available for the selected criteria");
