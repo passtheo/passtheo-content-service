@@ -180,12 +180,14 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
     @Query("SELECT qp FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
            "AND qp.productCode = :productCode " +
            "AND (:domainCode IS NULL OR qp.domainCode = :domainCode) " +
+           "AND (:topicCode IS NULL OR qp.topicCode = :topicCode) " +
            "AND qp.nextReviewAt IS NOT NULL AND qp.nextReviewAt < :now " +
            "ORDER BY qp.nextReviewAt ASC")
     List<QuestionProgress> findDueReviews(
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
             @Param("domainCode") String domainCode,
+            @Param("topicCode") String topicCode,
             @Param("now") Instant now,
             Pageable pageable);
 
@@ -201,12 +203,14 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
     @Query("SELECT qp FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
            "AND qp.productCode = :productCode " +
            "AND (:domainCode IS NULL OR qp.domainCode = :domainCode) " +
+           "AND (:topicCode IS NULL OR qp.topicCode = :topicCode) " +
            "AND qp.masteryLevel = 'LEARNING' AND qp.consecutiveCorrect < :maxConsecutive " +
            "ORDER BY qp.consecutiveCorrect ASC, qp.lastAnsweredAt ASC")
     List<QuestionProgress> findWeak(
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
             @Param("domainCode") String domainCode,
+            @Param("topicCode") String topicCode,
             @Param("maxConsecutive") int maxConsecutive,
             Pageable pageable);
 
@@ -220,11 +224,13 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
      */
     @Query("SELECT qp.strapiQuestionId FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
            "AND qp.productCode = :productCode " +
-           "AND (:domainCode IS NULL OR qp.domainCode = :domainCode)")
+           "AND (:domainCode IS NULL OR qp.domainCode = :domainCode) " +
+           "AND (:topicCode IS NULL OR qp.topicCode = :topicCode)")
     Set<String> findSeenQuestionIds(
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
-            @Param("domainCode") String domainCode);
+            @Param("domainCode") String domainCode,
+            @Param("topicCode") String topicCode);
 
     /**
      * Finds FAMILIAR questions sorted by nearest review date.
@@ -237,12 +243,14 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
     @Query("SELECT qp FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
            "AND qp.productCode = :productCode " +
            "AND (:domainCode IS NULL OR qp.domainCode = :domainCode) " +
+           "AND (:topicCode IS NULL OR qp.topicCode = :topicCode) " +
            "AND qp.masteryLevel = 'FAMILIAR' " +
            "ORDER BY qp.nextReviewAt ASC NULLS LAST")
     List<QuestionProgress> findFamiliarSorted(
             @Param("userId") UUID keycloakUserId,
             @Param("productCode") String productCode,
             @Param("domainCode") String domainCode,
+            @Param("topicCode") String topicCode,
             Pageable pageable);
 
     /**
