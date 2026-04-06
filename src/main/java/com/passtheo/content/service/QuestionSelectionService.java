@@ -117,8 +117,8 @@ public class QuestionSelectionService {
                 throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR,
                         "No weak questions to review — keep practicing!");
             }
-            LOG.debug("WEAK_REVIEW selection COMPLETE: user={}, product={}, domain={}, total={} [due={}, weak={}]",
-                    userId, productCode, domainCode, selected.size(), dueAdded, weakAdded);
+            LOG.debug("WEAK_REVIEW selection COMPLETE: user={}, product={}, domain={}, topic={}, total={} [due={}, weak={}]",
+                    userId, productCode, domainCode, effectiveTopic, selected.size(), dueAdded, weakAdded);
             return List.copyOf(selected);
         }
 
@@ -160,13 +160,13 @@ public class QuestionSelectionService {
             }
         }
 
-        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, total={} [due={}, weak={}, new={}, fill={}]",
-                userId, productCode, domainCode, selected.size(),
+        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, topic={}, total={} [due={}, weak={}, new={}, fill={}]",
+                userId, productCode, domainCode, effectiveTopic, selected.size(),
                 dueAdded, weakAdded, newAdded, fillAdded);
 
         if (selected.isEmpty()) {
-            LOG.warn("No questions selected: user={}, product={}, domain={}, requestedCount={}",
-                    userId, productCode, domainCode, count);
+            LOG.warn("No questions selected: user={}, product={}, domain={}, topic={}, requestedCount={}",
+                    userId, productCode, domainCode, effectiveTopic, count);
         }
 
         return List.copyOf(selected);

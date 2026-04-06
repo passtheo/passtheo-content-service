@@ -44,6 +44,7 @@ class QuestionSelectionServiceTest {
     private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final String PRODUCT = "auto-b";
     private static final String DOMAIN = "verkeersborden";
+    private static final String TOPIC = "voorrangsborden";
     private static final String LOCALE = "nl";
 
     @BeforeEach
@@ -225,6 +226,40 @@ class QuestionSelectionServiceTest {
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null,
                 SessionType.PRACTICE, 5, LOCALE);
+
+        assertEquals(5, selected.size());
+    }
+
+    // ─── Topic-level filtering ───
+
+    @Test
+    void topicCode_selectsQuestionsFromTopicOnly() {
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), eq(TOPIC), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>());
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), eq(TOPIC), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, TOPIC))
+                .thenReturn(Set.of());
+        when(strapiContentCache.getQuestionsByTopic(eq(TOPIC), eq(LOCALE)))
+                .thenReturn(buildQuestions(DOMAIN, 8));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, TOPIC, null, 5, LOCALE);
+
+        assertEquals(5, selected.size());
+    }
+
+    @Test
+    void blankTopicCode_normalizedToNull_selectsFromDomain() {
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>());
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
+                .thenReturn(Set.of());
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestions(DOMAIN, 10));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, "  ", null, 5, LOCALE);
 
         assertEquals(5, selected.size());
     }
