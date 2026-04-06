@@ -63,13 +63,15 @@ public class QuestionSelectionService {
      * @param userId      the user's Keycloak ID
      * @param productCode the product code
      * @param domainCode  the domain code (nullable for mixed/all domains)
+     * @param topicCode   the topic code (nullable — when non-null, narrows to topic)
      * @param sessionType the session type (nullable defaults to PRACTICE behaviour)
      * @param count       number of questions to select
      * @param locale      content locale for Strapi lookups
      * @return ordered list of Strapi question IDs
      */
     public List<String> selectQuestions(@Nonnull UUID userId, @Nonnull String productCode,
-                                        String domainCode, @Nullable SessionType sessionType,
+                                        String domainCode, @Nullable String topicCode,
+                                        @Nullable SessionType sessionType,
                                         int count, @Nonnull String locale) {
         List<String> selected = new ArrayList<>();
         int dueAdded = 0;
@@ -77,9 +79,12 @@ public class QuestionSelectionService {
         int newAdded = 0;
         int fillAdded = 0;
 
+        // Normalise blank topicCode to null for consistent IS NULL handling in queries.
+        String effectiveTopic = (topicCode != null && !topicCode.isBlank()) ? topicCode : null;
+
         // Priority 1: Due reviews (nextReviewAt < now) — most overdue first
         List<QuestionProgress> dueReviews = progressRepository
-                .findDueReviews(userId, productCode, domainCode, Instant.now(), Pageable.ofSize(count));
+                .findDueReviews(userId, productCode, domainCode, effectiveTopic, Instant.now(), Pageable.ofSize(count));
         dueReviews.sort(Comparator.comparing(QuestionProgress::getNextReviewAt));
         LOG.debug("Question selection P1 due-reviews: user={}, available={}", userId, dueReviews.size());
         for (QuestionProgress qp : dueReviews) {
@@ -93,7 +98,7 @@ public class QuestionSelectionService {
         // Priority 2: Weak questions (LEARNING with consecutiveCorrect < threshold)
         if (selected.size() < count) {
             List<QuestionProgress> weak = progressRepository
-                    .findWeak(userId, productCode, domainCode, WEAK_CONSECUTIVE_THRESHOLD, Pageable.ofSize(count));
+                    .findWeak(userId, productCode, domainCode, effectiveTopic, WEAK_CONSECUTIVE_THRESHOLD, Pageable.ofSize(count));
             LOG.debug("Question selection P2 weak: user={}, available={}", userId, weak.size());
             for (QuestionProgress qp : weak) {
                 if (selected.size() >= count) {
@@ -119,9 +124,9 @@ public class QuestionSelectionService {
 
         // Priority 3: New (unseen) questions — shuffled randomly for variety
         if (selected.size() < count) {
-            List<String> allQuestionIds = getAllQuestionIds(productCode, domainCode, locale);
+            List<String> allQuestionIds = getAllQuestionIds(productCode, domainCode, effectiveTopic, locale);
             Set<String> seenIds = progressRepository
-                    .findSeenQuestionIds(userId, productCode, domainCode);
+                    .findSeenQuestionIds(userId, productCode, domainCode, effectiveTopic);
 
             List<String> newIds = allQuestionIds.stream()
                     .filter(id -> !seenIds.contains(id) && !selected.contains(id))
@@ -142,7 +147,7 @@ public class QuestionSelectionService {
         // Priority 4: Fill with FAMILIAR questions closest to review date
         if (selected.size() < count) {
             List<QuestionProgress> familiar = progressRepository
-                    .findFamiliarSorted(userId, productCode, domainCode, Pageable.ofSize(count));
+                    .findFamiliarSorted(userId, productCode, domainCode, effectiveTopic, Pageable.ofSize(count));
             LOG.debug("Question selection P4 familiar-fill: user={}, available={}", userId, familiar.size());
             for (QuestionProgress qp : familiar) {
                 if (selected.size() >= count) {
@@ -176,7 +181,12 @@ public class QuestionSelectionService {
      * @return list of question IDs
      */
     private List<String> getAllQuestionIds(@Nonnull String productCode, String domainCode,
-                                           @Nonnull String locale) {
+                                           @Nullable String topicCode, @Nonnull String locale) {
+        if (topicCode != null) {
+            return strapiContentCache.getQuestionsByTopic(topicCode, locale).stream()
+                    .map(q -> q.documentId())
+                    .toList();
+        }
         if (domainCode != null && !domainCode.isBlank()) {
             return strapiContentCache.getQuestionsByDomain(domainCode, locale).stream()
                     .map(q -> q.documentId())
