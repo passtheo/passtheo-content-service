@@ -309,6 +309,41 @@ class AnswerProcessingServiceTest {
         assertThat(placements).doesNotContainKey("681");
     }
 
+    // ─── Pattern B: imageRegions without correctValue, dragTargets carry it ───
+
+    @Test
+    void gradeAnswer_dragNumbers_imageRegionsWithoutCorrectValue_usesPositionalMapping() {
+        // imageRegions define tap areas (no correctValue), dragTargets hold the ordering.
+        // Frontend sends imageRegion IDs — grading maps positionally to dragTarget correctValues.
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(808, "Car A", 20, 70, 14, 16, false, null),
+                        new StrapiQuestionDto.ImageRegionDto(809, "Car B", 60, 40, 16, 14, false, null),
+                        new StrapiQuestionDto.ImageRegionDto(810, "Car C", 30, 80, 14, 16, false, null),
+                        new StrapiQuestionDto.ImageRegionDto(811, "Pedestrian", 50, 20, 14, 16, false, null)),
+                List.of(new StrapiQuestionDto.DragTargetDto(681, "Car A", "1", false, 0, null),
+                        new StrapiQuestionDto.DragTargetDto(682, "Car B", "2", false, 1, null),
+                        new StrapiQuestionDto.DragTargetDto(683, "Car C", "3", false, 2, null),
+                        new StrapiQuestionDto.DragTargetDto(684, "Pedestrian", "4", false, 3, null)));
+        // Correct: 808→1, 809→2, 810→3, 811→4
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("808", "1", "809", "2", "810", "3", "811", "4")))).isTrue();
+        // Wrong order
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("808", "4", "809", "3", "810", "2", "811", "1")))).isFalse();
+    }
+
+    @Test
+    void buildCorrectAnswer_dragNumbers_imageRegionsWithoutCorrectValue_mapsPositionally() {
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(808, "Car A", 20, 70, 14, 16, false, null),
+                        new StrapiQuestionDto.ImageRegionDto(809, "Car B", 60, 40, 16, 14, false, null)),
+                List.of(new StrapiQuestionDto.DragTargetDto(681, "Car A", "1", false, 0, null),
+                        new StrapiQuestionDto.DragTargetDto(682, "Car B", "2", false, 1, null)));
+        @SuppressWarnings("unchecked")
+        Map<String, String> placements = (Map<String, String>) service.buildCorrectAnswer(question).get("placements");
+        // Uses imageRegion IDs (808, 809) mapped to dragTarget correctValues (1, 2)
+        assertThat(placements).containsEntry("808", "1").containsEntry("809", "2");
+        assertThat(placements).doesNotContainKey("681");
+    }
+
     // ─── MASTERY TRANSITIONS ───
 
     @Test
