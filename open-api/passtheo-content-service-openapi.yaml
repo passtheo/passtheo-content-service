@@ -279,6 +279,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_RoadSignList'
 
+  /api/content/lessons/{topicCode}:
+    get:
+      operationId: listLessonsByTopic
+      tags: [Content]
+      summary: Theory lessons for a topic (by topic code only)
+      description: Returns all active lessons for the given topic code. Simpler alternative to the hierarchical endpoint — no country/product context required.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: topicCode
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/LocaleQuery'
+      responses:
+        '200':
+          description: Lessons
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_LessonList'
+
   /api/content/{countryCode}/{productTypeCode}/{productCode}/lessons/{topicCode}:
     get:
       operationId: listLessons

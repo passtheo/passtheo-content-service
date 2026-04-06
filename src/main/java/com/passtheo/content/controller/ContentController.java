@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -262,6 +263,20 @@ public class ContentController {
     }
 
     /**
+     * Lists lessons for a topic (flat endpoint — no country/product hierarchy required).
+     *
+     * @param topicCode the topic code
+     * @param locale    content locale
+     * @return list of lessons
+     */
+    @GetMapping("/lessons/{topicCode}")
+    public ResponseEntity<ApiResponse<List<LessonDto>>> listLessonsByTopic(
+            @PathVariable @Nonnull String topicCode,
+            @RequestParam(defaultValue = "nl") String locale) {
+        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+    }
+
+    /**
      * Lists lessons for a topic.
      *
      * @param topicCode the topic code
@@ -275,16 +290,20 @@ public class ContentController {
             @PathVariable String productCode,
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        var lessons = strapiContentCache.getLessons(topicCode, locale).stream()
+        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+    }
+
+    private List<LessonDto> buildLessonDtos(@Nonnull String topicCode, @Nonnull String locale) {
+        return strapiContentCache.getLessons(topicCode, locale).stream()
                 .map(l -> new LessonDto(
                         l.title(), l.slug(),
                         l.sections() != null ? l.sections().stream()
+                                .filter(Objects::nonNull)
                                 .map(s -> new LessonSectionDto(
                                         s.heading(), s.body(), s.tip(),
                                         s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
                                 .toList() : List.of(),
                         l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes()))
                 .toList();
-        return ResponseEntity.ok(ApiResponse.success(lessons, MDC.get("traceId")));
     }
 }

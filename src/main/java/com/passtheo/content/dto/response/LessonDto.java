@@ -24,6 +24,6 @@ public record LessonDto(
         String tip,
         String keyRule,
         String relatedRoadSignCode,
-        int sortOrder
+        Integer sortOrder
     ) {}
 }

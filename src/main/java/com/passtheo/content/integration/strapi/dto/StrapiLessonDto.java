@@ -20,7 +20,7 @@ public record StrapiLessonDto(
     Integer readTimeMinutes,
     boolean isActive,
     boolean isPremium,
-    int sortOrder
+    Integer sortOrder
 ) {
 
     /**
@@ -33,6 +33,6 @@ public record StrapiLessonDto(
         String tip,
         String keyRule,
         String relatedRoadSignCode,
-        int sortOrder
+        Integer sortOrder
     ) {}
 }
