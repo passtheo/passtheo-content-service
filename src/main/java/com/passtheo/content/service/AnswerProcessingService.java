@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Grades answers for all 6 interaction types and updates spaced repetition state.
+ * Grades answers for all 8 interaction types and updates spaced repetition state.
  * Binary grading (correct/incorrect), not 0-5 scale. Max interval: 14 days.
  */
 @Service
@@ -46,6 +46,8 @@ public class AnswerProcessingService {
             case "tap_on_image" -> gradeTapOnImage(question, answer);
             case "drag_checkmark" -> gradeDragCheckmark(question, answer);
             case "drag_numbers" -> gradeDragNumbers(question, answer);
+            case "multiple_response" -> gradeMultipleResponse(question, answer);
+            case "video_question" -> gradeMultipleChoice(question, answer);
             default -> {
                 LOG.warn("Unknown interaction type: {}", question.interactionType());
                 yield false;
@@ -96,7 +98,7 @@ public class AnswerProcessingService {
      */
     public Map<String, Object> buildCorrectAnswer(@Nonnull StrapiQuestionDto question) {
         return switch (question.interactionType()) {
-            case "multiple_choice" -> {
+            case "multiple_choice", "video_question" -> {
                 String correctId = question.answerOptions() != null
                         ? question.answerOptions().stream()
                         .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
@@ -131,12 +133,25 @@ public class AnswerProcessingService {
             }
             case "drag_numbers" -> {
                 Map<String, String> placements = new java.util.LinkedHashMap<>();
-                if (question.dragTargets() != null) {
+                if (question.dragTargets() != null && !question.dragTargets().isEmpty()) {
                     question.dragTargets().stream()
                             .filter(dt -> dt.correctValue() != null)
                             .forEach(dt -> placements.put(String.valueOf(dt.id()), dt.correctValue()));
+                } else if (question.imageRegions() != null) {
+                    question.imageRegions().stream()
+                            .filter(r -> r.correctValue() != null)
+                            .forEach(r -> placements.put(String.valueOf(r.id()), r.correctValue()));
                 }
                 yield Map.of("placements", (Object) placements);
+            }
+            case "multiple_response" -> {
+                List<String> correctIds = question.answerOptions() != null
+                        ? question.answerOptions().stream()
+                        .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
+                        .map(o -> String.valueOf(o.id()))
+                        .toList()
+                        : List.of();
+                yield Map.of("selectedOptionIds", correctIds);
             }
             default -> Map.of();
         };
@@ -207,10 +222,30 @@ public class AnswerProcessingService {
     @SuppressWarnings("unchecked")
     private boolean gradeDragNumbers(StrapiQuestionDto question, Map<String, Object> answer) {
         Object placementsObj = answer.get("placements");
-        if (placementsObj == null || question.dragTargets() == null) {
+        if (placementsObj == null) {
             return false;
         }
         Map<?, ?> placements = (Map<?, ?>) placementsObj;
+
+        // Image-based ordering: use imageRegions when dragTargets is absent
+        if ((question.dragTargets() == null || question.dragTargets().isEmpty())
+                && question.imageRegions() != null && !question.imageRegions().isEmpty()) {
+            for (StrapiQuestionDto.ImageRegionDto region : question.imageRegions()) {
+                if (region.correctValue() == null) {
+                    continue;
+                }
+                Object placed = placements.get(String.valueOf(region.id()));
+                if (placed == null || !region.correctValue().equals(placed.toString())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Text-based ordering: use dragTargets
+        if (question.dragTargets() == null) {
+            return false;
+        }
         for (StrapiQuestionDto.DragTargetDto target : question.dragTargets()) {
             if (target.correctValue() == null) {
                 continue;
@@ -221,6 +256,23 @@ public class AnswerProcessingService {
             }
         }
         return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean gradeMultipleResponse(StrapiQuestionDto question, Map<String, Object> answer) {
+        Object selectedObj = answer.get("selectedOptionIds");
+        if (selectedObj == null || question.answerOptions() == null) {
+            return false;
+        }
+        List<String> selectedIds = ((List<?>) selectedObj).stream()
+                .map(Object::toString)
+                .toList();
+        List<String> correctIds = question.answerOptions().stream()
+                .filter(StrapiQuestionDto.AnswerOptionDto::isCorrect)
+                .map(o -> String.valueOf(o.id()))
+                .toList();
+        return selectedIds.size() == correctIds.size()
+                && selectedIds.containsAll(correctIds);
     }
 
     private void adjustEaseFactor(QuestionProgress progress, boolean isCorrect) {
