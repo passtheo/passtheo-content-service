@@ -243,12 +243,18 @@ class AnswerProcessingServiceTest {
     }
 
     @Test
-    void gradeAnswer_dragNumbers_prefersDragTargetsOverImageRegions() {
-        // When both dragTargets and imageRegions exist, use dragTargets
+    void gradeAnswer_dragNumbers_prefersImageRegionsOverDragTargets() {
+        // When both exist, imageRegions take priority (matches frontend DragNumbersRenderer).
+        // Frontend sends imageRegion IDs, so grading must use those too.
         StrapiQuestionDto question = buildQuestion("drag_numbers", null,
-                List.of(new StrapiQuestionDto.ImageRegionDto(10, "Region", 20, 70, 14, 16, false, "9")),
-                List.of(new StrapiQuestionDto.DragTargetDto(1, "Pos", "1", false, 0, null)));
-        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("1", "1")))).isTrue();
+                List.of(new StrapiQuestionDto.ImageRegionDto(808, "Car A", 20, 70, 14, 16, false, "1"),
+                        new StrapiQuestionDto.ImageRegionDto(809, "Car B", 60, 40, 16, 14, false, "2")),
+                List.of(new StrapiQuestionDto.DragTargetDto(681, "Car A", "1", false, 0, null),
+                        new StrapiQuestionDto.DragTargetDto(682, "Car B", "2", false, 1, null)));
+        // User sends imageRegion IDs (808, 809) — must be graded correctly
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("808", "1", "809", "2")))).isTrue();
+        // User sends dragTarget IDs (681, 682) — would fail because grading uses imageRegion IDs
+        assertThat(service.gradeAnswer(question, Map.of("placements", Map.of("681", "1", "682", "2")))).isFalse();
     }
 
     // ─── BUILD CORRECT ANSWER ───
@@ -287,6 +293,20 @@ class AnswerProcessingServiceTest {
         @SuppressWarnings("unchecked")
         Map<String, String> placements = (Map<String, String>) correct.get("placements");
         assertThat(placements).containsEntry("1", "2").containsEntry("2", "1");
+    }
+
+    @Test
+    void buildCorrectAnswer_dragNumbers_bothFieldsPresent_usesImageRegionIds() {
+        StrapiQuestionDto question = buildQuestion("drag_numbers", null,
+                List.of(new StrapiQuestionDto.ImageRegionDto(808, "Car A", 20, 70, 14, 16, false, "1"),
+                        new StrapiQuestionDto.ImageRegionDto(809, "Car B", 60, 40, 16, 14, false, "2")),
+                List.of(new StrapiQuestionDto.DragTargetDto(681, "Car A", "1", false, 0, null),
+                        new StrapiQuestionDto.DragTargetDto(682, "Car B", "2", false, 1, null)));
+        @SuppressWarnings("unchecked")
+        Map<String, String> placements = (Map<String, String>) service.buildCorrectAnswer(question).get("placements");
+        // Must use imageRegion IDs (808, 809), not dragTarget IDs (681, 682)
+        assertThat(placements).containsEntry("808", "1").containsEntry("809", "2");
+        assertThat(placements).doesNotContainKey("681");
     }
 
     // ─── MASTERY TRANSITIONS ───
