@@ -79,12 +79,34 @@ Feature: Content Hierarchy Browsing
     Then status 200
     And match response.data == '#array'
 
-  Scenario: List lessons for a topic
+  Scenario: List lessons for a topic (hierarchical endpoint)
     Given path '/api/content/NL/cbr/auto-b/lessons/voorrangsborden'
     And headers paidHeaders
     When method GET
     Then status 200
     And match response.data == '#array'
+
+  Scenario: List lessons by topic code (flat endpoint)
+    Given path '/api/content/lessons/voorrangsborden'
+    And headers paidHeaders
+    When method GET
+    Then status 200
+    And match response.data == '#array'
+
+  Scenario: List lessons by topic code with locale
+    Given path '/api/content/lessons/voorrangsborden'
+    And headers paidHeaders
+    And param locale = 'en'
+    When method GET
+    Then status 200
+    And match response.data == '#array'
+
+  Scenario: List lessons for unknown topic code returns empty list
+    Given path '/api/content/lessons/nonexistent-topic-xyz'
+    And headers paidHeaders
+    When method GET
+    Then status 200
+    And match response.data == '#[]'
 
   Scenario: Content supports locale parameter
     Given path '/api/content/NL/cbr/auto-b/domains'
