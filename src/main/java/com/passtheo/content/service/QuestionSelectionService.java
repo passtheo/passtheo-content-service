@@ -122,9 +122,11 @@ public class QuestionSelectionService {
             return List.copyOf(selected);
         }
 
+        // Fetch full question pool once — reused in P3 and P5.
+        List<String> allQuestionIds = getAllQuestionIds(productCode, domainCode, effectiveTopic, locale);
+
         // Priority 3: New (unseen) questions — shuffled randomly for variety
         if (selected.size() < count) {
-            List<String> allQuestionIds = getAllQuestionIds(productCode, domainCode, effectiveTopic, locale);
             Set<String> seenIds = progressRepository
                     .findSeenQuestionIds(userId, productCode, domainCode, effectiveTopic);
 
@@ -160,9 +162,26 @@ public class QuestionSelectionService {
             }
         }
 
-        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, topic={}, total={} [due={}, weak={}, new={}, fill={}]",
+        // Priority 5: Catch-all — include remaining pool questions not covered by P1–P4.
+        // P4 only selects FAMILIAR mastery; this catches MASTERED (not yet due) and LEARNING
+        // questions with consecutiveCorrect >= threshold that would otherwise be dropped.
+        int catchAllAdded = 0;
+        if (selected.size() < count) {
+            for (String id : allQuestionIds) {
+                if (selected.size() >= count) {
+                    break;
+                }
+                if (!selected.contains(id)) {
+                    selected.add(id);
+                    catchAllAdded++;
+                }
+            }
+            LOG.debug("Question selection P5 catch-all: user={}, added={}", userId, catchAllAdded);
+        }
+
+        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, topic={}, total={} [due={}, weak={}, new={}, fill={}, catchAll={}]",
                 userId, productCode, domainCode, effectiveTopic, selected.size(),
-                dueAdded, weakAdded, newAdded, fillAdded);
+                dueAdded, weakAdded, newAdded, fillAdded, catchAllAdded);
 
         if (selected.isEmpty()) {
             LOG.warn("No questions selected: user={}, product={}, domain={}, topic={}, requestedCount={}",
