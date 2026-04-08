@@ -4,6 +4,7 @@ import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
+import com.passtheo.content.dto.response.SessionBreakdownDto;
 import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
 import com.passtheo.content.integration.subscription.SubscriptionClient;
@@ -164,5 +165,21 @@ public class PracticeController {
 
         SessionSummaryDto summary = practiceSessionService.completeSession(userId, sessionId);
         return ResponseEntity.ok(ApiResponse.success(summary, MDC.get("traceId")));
+    }
+
+    /**
+     * Returns full session breakdown with per-question detail for review.
+     *
+     * @param sessionId the session ID
+     * @param userId    user ID from header
+     * @return session breakdown with all questions, answers, and explanations
+     */
+    @GetMapping("/{sessionId}/breakdown")
+    public ResponseEntity<ApiResponse<SessionBreakdownDto>> getSessionBreakdown(
+            @PathVariable @Nonnull UUID sessionId,
+            @RequestHeader("X-Keycloak-User-ID") UUID userId) {
+
+        SessionBreakdownDto breakdown = practiceSessionService.getSessionBreakdown(userId, sessionId);
+        return ResponseEntity.ok(ApiResponse.success(breakdown, MDC.get("traceId")));
     }
 }

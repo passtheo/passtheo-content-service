@@ -1,7 +1,10 @@
 package com.passtheo.content.controller;
 
+import com.passtheo.content.domain.entity.QuestionReport;
 import com.passtheo.content.domain.enums.DomainStrength;
+import com.passtheo.content.domain.enums.ReportType;
 import com.passtheo.content.domain.valueobject.AccessGrant;
+import com.passtheo.content.dto.request.QuestionReportRequest;
 import com.passtheo.content.dto.response.CountryDto;
 import com.passtheo.content.dto.response.DomainWithProgressDto;
 import com.passtheo.content.dto.response.LessonDto;
@@ -14,16 +17,22 @@ import com.passtheo.content.dto.response.TopicWithProgressDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
+import com.passtheo.content.repository.QuestionReportRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
 import com.passtheo.content.service.ReadinessService;
+import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.dto.ApiResponse;
 import jakarta.annotation.Nonnull;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -48,6 +57,7 @@ public class ContentController {
 
     private final StrapiContentCache strapiContentCache;
     private final QuestionProgressRepository questionProgressRepository;
+    private final QuestionReportRepository questionReportRepository;
     private final EntitlementChecker entitlementChecker;
     private final OnboardingCatalogService onboardingCatalogService;
 
@@ -56,15 +66,18 @@ public class ContentController {
      *
      * @param strapiContentCache         Strapi content cache
      * @param questionProgressRepository question progress repository
+     * @param questionReportRepository   question report repository
      * @param entitlementChecker         entitlement checker
      * @param onboardingCatalogService   onboarding catalog service
      */
     public ContentController(StrapiContentCache strapiContentCache,
                              QuestionProgressRepository questionProgressRepository,
+                             QuestionReportRepository questionReportRepository,
                              EntitlementChecker entitlementChecker,
                              OnboardingCatalogService onboardingCatalogService) {
         this.strapiContentCache = strapiContentCache;
         this.questionProgressRepository = questionProgressRepository;
+        this.questionReportRepository = questionReportRepository;
         this.entitlementChecker = entitlementChecker;
         this.onboardingCatalogService = onboardingCatalogService;
     }
@@ -291,6 +304,28 @@ public class ContentController {
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
         return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+    }
+
+    /**
+     * Reports an error in a question.
+     *
+     * @param userId           user ID from header
+     * @param strapiQuestionId the Strapi question document ID
+     * @param request          the report details
+     * @return 201 Created
+     */
+    @PostMapping("/questions/{strapiQuestionId}/report")
+    public ResponseEntity<ApiResponse<Void>> reportQuestion(
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @PathVariable @Nonnull String strapiQuestionId,
+            @RequestBody @Valid @Nonnull QuestionReportRequest request) {
+
+        ReportType reportType = ReportType.valueOf(request.reportType());
+        QuestionReport report = new QuestionReport(
+                TenantContext.get(), userId, strapiQuestionId, reportType, request.comment());
+        questionReportRepository.save(report);
+        LOG.info("Question reported: user={}, question={}, type={}", userId, strapiQuestionId, reportType);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(null, MDC.get("traceId")));
     }
 
     private List<LessonDto> buildLessonDtos(@Nonnull String topicCode, @Nonnull String locale) {

@@ -6,6 +6,7 @@ import com.passtheo.content.dto.response.DomainProgressDto;
 import com.passtheo.content.dto.response.MasteryStatsDto;
 import com.passtheo.content.dto.response.ReadinessDto;
 import com.passtheo.content.dto.response.ReadinessSnapshotDto;
+import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.content.service.ProgressService;
 import com.passtheo.content.service.ReadinessService;
 import com.passtheo.shared.core.dto.ApiResponse;
@@ -14,7 +15,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -34,16 +38,20 @@ public class ProgressController {
 
     private final ReadinessService readinessService;
     private final ProgressService progressService;
+    private final PracticeSessionService practiceSessionService;
 
     /**
      * Constructs the progress controller.
      *
-     * @param readinessService readiness score service
-     * @param progressService  progress aggregation service
+     * @param readinessService       readiness score service
+     * @param progressService        progress aggregation service
+     * @param practiceSessionService practice session service (for flag/unflag)
      */
-    public ProgressController(ReadinessService readinessService, ProgressService progressService) {
+    public ProgressController(ReadinessService readinessService, ProgressService progressService,
+                              PracticeSessionService practiceSessionService) {
         this.readinessService = readinessService;
         this.progressService = progressService;
+        this.practiceSessionService = practiceSessionService;
     }
 
     /**
@@ -134,5 +142,37 @@ public class ProgressController {
 
         MasteryStatsDto stats = progressService.getMasteryStats(userId, productCode, locale);
         return ResponseEntity.ok(ApiResponse.success(stats, MDC.get("traceId")));
+    }
+
+    /**
+     * Flags a question for extra practice.
+     *
+     * @param userId           user ID from header
+     * @param strapiQuestionId the Strapi question document ID
+     * @return 204 No Content
+     */
+    @PostMapping("/questions/{strapiQuestionId}/flag")
+    public ResponseEntity<Void> flagQuestion(
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @PathVariable @Nonnull String strapiQuestionId) {
+
+        practiceSessionService.flagQuestion(userId, strapiQuestionId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Unflags a question.
+     *
+     * @param userId           user ID from header
+     * @param strapiQuestionId the Strapi question document ID
+     * @return 204 No Content
+     */
+    @DeleteMapping("/questions/{strapiQuestionId}/flag")
+    public ResponseEntity<Void> unflagQuestion(
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @PathVariable @Nonnull String strapiQuestionId) {
+
+        practiceSessionService.unflagQuestion(userId, strapiQuestionId);
+        return ResponseEntity.noContent().build();
     }
 }
