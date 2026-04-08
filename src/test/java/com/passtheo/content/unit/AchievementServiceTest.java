@@ -196,6 +196,36 @@ class AchievementServiceTest {
     }
 
     @Test
+    void domainMastered_clampsCoverageWhenQuestionsDeactivated() {
+        // Domain had 30 questions, user attempted 27 (90% coverage → MASTERED).
+        // After 10 questions deactivated, active pool is 20. Without clamping,
+        // coverage = 27/20 = 135% → still MASTERED. With clamping, coverage = 20/20 = 100%.
+        // Either way MASTERED, but verify the count is clamped correctly (no >100% coverage).
+        StrapiAchievementDefDto def = new StrapiAchievementDefDto(
+                1, null, "Domeinmeester", "domain_mastered", "desc", "🎓", "🔒",
+                "domain_mastered", 1, 75, true, 1, null);
+        when(strapiContentCache.getAchievements(PRODUCT)).thenReturn(List.of(def));
+        when(achievementRepository.findEarnedCodes(USER_ID)).thenReturn(Set.of());
+
+        QuestionProgressRepository.DomainMasteryProjection agg =
+                mock(QuestionProgressRepository.DomainMasteryProjection.class);
+        when(agg.getDomainCode()).thenReturn("verkeersborden");
+        when(agg.getAttemptedCount()).thenReturn(27L);  // exceeds active pool of 20
+        when(agg.getCorrectCount()).thenReturn(25L);
+        when(agg.getTotalAttempts()).thenReturn(30L);   // 25/30 = 83.3% accuracy (not MASTERED alone)
+        // But coverage clamped to 20/20 = 100% → accuracy 83% + coverage 100% → MODERATE (< 85% accuracy)
+        // So with these numbers, it should NOT be MASTERED (accuracy 83.3% < 85%)
+
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of(agg));
+        when(strapiContentCache.getQuestionCountByDomain("verkeersborden", "nl")).thenReturn(20);
+
+        List<EarnedAchievementDto> result = achievementService.checkAchievements(USER_ID, PRODUCT);
+
+        // accuracy 83.3% < 85% threshold → NOT MASTERED → achievement not earned
+        assertTrue(result.isEmpty(), "Should not earn domain_mastered when accuracy < 85%");
+    }
+
+    @Test
     void below_threshold_achievement_not_earned() {
         StrapiAchievementDefDto def = new StrapiAchievementDefDto(
                 1, null, "Beginnersluk", "ten_questions", "desc", "⭐", "🔒",

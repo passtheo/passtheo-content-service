@@ -176,8 +176,12 @@ public class PracticeSessionService {
         session.setQuestionIdList(questionIds);
         session = sessionRepository.save(session);
 
-        // Get first question from Strapi cache
-        QuestionDto firstQuestion = loadQuestion(questionIds.getFirst(), locale, 1);
+        // Get first valid question — skip any that were deleted/deactivated between selection and now
+        QuestionDto firstQuestion = findNextValidQuestion(questionIds, 0, locale);
+        if (firstQuestion == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR,
+                    "No active questions available — all selected questions have been removed or deactivated.");
+        }
 
         LOG.info("Session started: id={}, user={}, product={}, domain={}, type={}, questions={}",
                 session.getId(), userId, request.productCode(), request.domainCode(),
@@ -347,7 +351,16 @@ public class PracticeSessionService {
                         SessionType.PRACTICE, session.getTotalQuestions(), locale);
             }
             if (questionOrder < allIds.size()) {
-                nextQuestion = loadQuestion(allIds.get(questionOrder), locale, questionOrder + 1);
+                // Skip any deactivated/deleted questions to find the next valid one
+                nextQuestion = findNextValidQuestion(allIds, questionOrder, locale);
+            }
+            // All remaining questions were deactivated — adjust totalQuestions so the
+            // session naturally reaches the COMPLETED threshold on the next completeSession call.
+            if (nextQuestion == null) {
+                session.setTotalQuestions(session.getAnsweredCount());
+                sessionRepository.save(session);
+                LOG.info("Adjusted session totalQuestions: sessionId={}, newTotal={} (remaining questions deactivated)",
+                        session.getId(), session.getAnsweredCount());
             }
         }
 
@@ -523,6 +536,7 @@ public class PracticeSessionService {
         String locale = session.getLocale();
 
         QuestionDto currentQuestion = null;
+        int effectiveTotalQuestions = session.getTotalQuestions();
         if (session.getStatus() == SessionStatus.IN_PROGRESS
                 && session.getAnsweredCount() < session.getTotalQuestions()) {
             // Use stored IDs for deterministic ordering; fall back to re-selection for legacy sessions.
@@ -534,9 +548,14 @@ public class PracticeSessionService {
                         SessionType.PRACTICE, session.getTotalQuestions(), locale);
             }
             if (session.getAnsweredCount() < questionIds.size()) {
-                currentQuestion = loadQuestion(
-                        questionIds.get(session.getAnsweredCount()),
-                        locale, session.getAnsweredCount() + 1);
+                // Skip any deactivated/deleted questions to find the next valid one
+                currentQuestion = findNextValidQuestion(
+                        questionIds, session.getAnsweredCount(), locale);
+            }
+            // All remaining questions were deactivated — report answered count as total
+            // so the client shows the session as completable.
+            if (currentQuestion == null) {
+                effectiveTotalQuestions = session.getAnsweredCount();
             }
         }
 
@@ -552,7 +571,7 @@ public class PracticeSessionService {
         return new SessionDto(
                 session.getId(),
                 session.getStatus().name(),
-                session.getTotalQuestions(),
+                effectiveTotalQuestions,
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
                 currentQuestion,
@@ -604,6 +623,14 @@ public class PracticeSessionService {
         );
     }
 
+    /**
+     * Loads a single question from Strapi cache by ID.
+     *
+     * @param questionId the Strapi question document ID
+     * @param locale     the content locale
+     * @param order      the question order number in the session
+     * @return the question DTO, or null if the question was deleted/deactivated in Strapi
+     */
     private QuestionDto loadQuestion(String questionId, String locale, int order) {
         StrapiQuestionDto q = strapiContentCache.getQuestion(questionId, locale);
         if (q == null) {
@@ -633,6 +660,28 @@ public class PracticeSessionService {
                         .toList() : null,
                 order, q.domain() != null ? q.domain().code() : null, explanation
         );
+    }
+
+    /**
+     * Finds the next valid (non-deleted, non-deactivated) question starting from the given
+     * index in the question ID list. Skips questions that return null from Strapi.
+     *
+     * @param questionIds the ordered list of question IDs for the session
+     * @param startIndex  the index to start searching from (inclusive)
+     * @param locale      the content locale
+     * @return the loaded question DTO, or null if no valid question remains
+     */
+    @Nullable
+    private QuestionDto findNextValidQuestion(@Nonnull List<String> questionIds, int startIndex,
+                                              @Nonnull String locale) {
+        for (int i = startIndex; i < questionIds.size(); i++) {
+            QuestionDto q = loadQuestion(questionIds.get(i), locale, i + 1);
+            if (q != null) {
+                return q;
+            }
+            LOG.warn("Skipping deactivated/deleted question: id={}, index={}", questionIds.get(i), i);
+        }
+        return null;
     }
 
     /**
@@ -676,8 +725,8 @@ public class PracticeSessionService {
                     double masteryPercent = 0.0;
 
                     if (agg != null) {
-                        masteredCount = (int) agg.getMasteredCount();
-                        learningCount = (int) agg.getLearningCount();
+                        masteredCount = Math.min((int) agg.getMasteredCount(), totalQuestions);
+                        learningCount = Math.min((int) agg.getLearningCount(), totalQuestions - masteredCount);
                         newCount = Math.max(0, totalQuestions - masteredCount - learningCount);
                         masteryPercent = totalQuestions > 0
                                 ? (double) masteredCount / totalQuestions * 100.0 : 0.0;

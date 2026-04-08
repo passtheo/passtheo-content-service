@@ -117,8 +117,11 @@ public class ReadinessService {
         StrapiExamConfigDto examConfig = strapiContentCache.getExamConfig(productCode);
         int passScore = examConfig != null ? examConfig.passScore() : 44;
 
+        // Clamp attempted count to active total — progress records may reference
+        // deactivated questions that are no longer in the Strapi active pool.
+        int clampedAttempted = Math.min(questionsAttempted, totalQuestions);
         double coverage = totalQuestions > 0
-                ? (double) questionsAttempted / totalQuestions * 100.0 : 0.0;
+                ? (double) clampedAttempted / totalQuestions * 100.0 : 0.0;
         double accuracy = totalAttempts > 0
                 ? (double) totalCorrect / totalAttempts * 100.0 : 0.0;
         double exam = 0.0;
@@ -158,8 +161,9 @@ public class ReadinessService {
                     int domainTotal = strapiContentCache.getQuestionCountByDomain(code, locale);
                     double domainAccuracy = agg.getTotalAttempts() > 0
                             ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                    long clampedDomainAttempted = Math.min(agg.getAttemptedCount(), domainTotal);
                     double domainCoverage = domainTotal > 0
-                            ? (double) agg.getAttemptedCount() / domainTotal * 100.0 : 0.0;
+                            ? (double) clampedDomainAttempted / domainTotal * 100.0 : 0.0;
                     DomainStrength strength = classifyDomainStrength(domainAccuracy, domainCoverage);
                     return new ReadinessScore.DomainStrengthValue(
                             code, name, domainAccuracy, domainCoverage, strength.name());

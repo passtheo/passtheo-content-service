@@ -5,6 +5,7 @@ import com.passtheo.content.domain.entity.StudySession;
 import com.passtheo.content.domain.enums.SessionStatus;
 import com.passtheo.content.domain.enums.SessionType;
 import com.passtheo.content.dto.response.ActiveSessionDto;
+import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
@@ -102,6 +103,30 @@ class PracticeSessionServiceActiveSessionTest {
         ActiveSessionDto result = service.getActiveSession(USER_ID, PRODUCT_CODE, "nl");
 
         assertThat(result).isNull();
+    }
+
+    @Test
+    void getSession_allRemainingQuestionsDeactivated_adjustsTotalQuestions() {
+        // Session has 10 questions, 5 answered. Remaining 5 are all deactivated.
+        // getSession() should return totalQuestions == answeredCount (5) and currentQuestion == null.
+        StudySession session = new StudySession(USER_ID, PRODUCT_CODE, "voorrang", null,
+                SessionType.PRACTICE, 10, "nl");
+        session.setId(UUID.randomUUID());
+        session.setAnsweredCount(5);
+        session.setQuestionIdList(List.of("q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9", "q10"));
+
+        when(sessionRepository.findByIdAndKeycloakUserId(session.getId(), USER_ID))
+                .thenReturn(Optional.of(session));
+        // All remaining questions (q6-q10) return null from Strapi
+        when(answerRepository.findBySessionIdOrderByQuestionOrderAsc(session.getId()))
+                .thenReturn(List.of());
+
+        SessionDto result = service.getSession(USER_ID, session.getId());
+
+        assertThat(result).isNotNull();
+        assertThat(result.currentQuestion()).isNull();
+        // totalQuestions should be adjusted down to answeredCount
+        assertThat(result.totalQuestions()).isEqualTo(5);
     }
 
     @Test

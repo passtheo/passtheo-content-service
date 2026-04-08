@@ -146,7 +146,9 @@ public class StudyPlanService {
                 long totalQuestions = strapiContentCache.getQuestionCount(request.productCode(), locale);
                 long mastered = progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
                         userId, request.productCode(), MasteryLevel.MASTERED);
-                long remaining = Math.max(totalQuestions - mastered, 0);
+                // Clamp mastered to active total — progress records may reference deactivated questions
+                long clampedMastered = Math.min(mastered, totalQuestions);
+                long remaining = Math.max(totalQuestions - clampedMastered, 0);
                 resolvedDailyTarget = (int) Math.min(50, Math.max(5,
                         (long) Math.ceil((double) remaining / daysUntilExam)));
             } else {
