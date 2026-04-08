@@ -87,9 +87,9 @@ public class ProgressService {
                     DomainStrength strength = ReadinessService.classifyDomainStrength(accuracy, coverage);
                     return new DomainProgressDto(
                             d.code(), d.name(), totalQuestions,
-                            (int) agg.getAttemptedCount(),
-                            (int) agg.getCorrectCount(),
-                            (int) agg.getMasteredCount(),
+                            (int) clampedAttempted,
+                            (int) Math.min(agg.getCorrectCount(), clampedAttempted),
+                            (int) Math.min(agg.getMasteredCount(), totalQuestions),
                             accuracy, coverage, strength.name());
                 })
                 .toList();
@@ -121,12 +121,27 @@ public class ProgressService {
         // so percentages never exceed 100%.
         long seenTotal = newCount + learningCount + familiarCount + masteredCount;
         if (seenTotal > totalQuestions && totalQuestions > 0) {
-            // Proportionally scale down to fit active pool
+            // Proportionally scale down to fit active pool. Use Math.round for each bucket,
+            // then correct any rounding overshoot by trimming the largest bucket.
             double scale = (double) totalQuestions / seenTotal;
             masteredCount = Math.round(masteredCount * scale);
             familiarCount = Math.round(familiarCount * scale);
             learningCount = Math.round(learningCount * scale);
             newCount = Math.round(newCount * scale);
+            long scaledSum = masteredCount + familiarCount + learningCount + newCount;
+            if (scaledSum > totalQuestions) {
+                long excess = scaledSum - totalQuestions;
+                // Subtract the overshoot from the largest bucket to minimise visual distortion
+                if (masteredCount >= familiarCount && masteredCount >= learningCount && masteredCount >= newCount) {
+                    masteredCount -= excess;
+                } else if (familiarCount >= learningCount && familiarCount >= newCount) {
+                    familiarCount -= excess;
+                } else if (learningCount >= newCount) {
+                    learningCount -= excess;
+                } else {
+                    newCount -= excess;
+                }
+            }
         }
 
         // Questions not yet seen are also NEW

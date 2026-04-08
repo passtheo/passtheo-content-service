@@ -354,6 +354,14 @@ public class PracticeSessionService {
                 // Skip any deactivated/deleted questions to find the next valid one
                 nextQuestion = findNextValidQuestion(allIds, questionOrder, locale);
             }
+            // All remaining questions were deactivated — adjust totalQuestions so the
+            // session naturally reaches the COMPLETED threshold on the next completeSession call.
+            if (nextQuestion == null) {
+                session.setTotalQuestions(session.getAnsweredCount());
+                sessionRepository.save(session);
+                LOG.info("Adjusted session totalQuestions: sessionId={}, newTotal={} (remaining questions deactivated)",
+                        session.getId(), session.getAnsweredCount());
+            }
         }
 
         double accuracyPercent = session.getAnsweredCount() > 0
@@ -528,6 +536,7 @@ public class PracticeSessionService {
         String locale = session.getLocale();
 
         QuestionDto currentQuestion = null;
+        int effectiveTotalQuestions = session.getTotalQuestions();
         if (session.getStatus() == SessionStatus.IN_PROGRESS
                 && session.getAnsweredCount() < session.getTotalQuestions()) {
             // Use stored IDs for deterministic ordering; fall back to re-selection for legacy sessions.
@@ -543,6 +552,11 @@ public class PracticeSessionService {
                 currentQuestion = findNextValidQuestion(
                         questionIds, session.getAnsweredCount(), locale);
             }
+            // All remaining questions were deactivated — report answered count as total
+            // so the client shows the session as completable.
+            if (currentQuestion == null) {
+                effectiveTotalQuestions = session.getAnsweredCount();
+            }
         }
 
         List<AnsweredQuestionSummaryDto> answeredQuestions = answerRepository
@@ -557,7 +571,7 @@ public class PracticeSessionService {
         return new SessionDto(
                 session.getId(),
                 session.getStatus().name(),
-                session.getTotalQuestions(),
+                effectiveTotalQuestions,
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
                 currentQuestion,
@@ -655,7 +669,7 @@ public class PracticeSessionService {
      * @param questionIds the ordered list of question IDs for the session
      * @param startIndex  the index to start searching from (inclusive)
      * @param locale      the content locale
-     * @return the loaded question DTO paired with its index in the list, or null if no valid question remains
+     * @return the loaded question DTO, or null if no valid question remains
      */
     @Nullable
     private QuestionDto findNextValidQuestion(@Nonnull List<String> questionIds, int startIndex,

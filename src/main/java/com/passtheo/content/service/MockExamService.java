@@ -238,6 +238,11 @@ public class MockExamService {
 
                 domainStats.computeIfAbsent("unknown", k -> new int[]{0, 0});
                 domainStats.get("unknown")[1]++;
+
+                // Add to wrong answers so the user can see why they lost a point
+                wrongAnswers.add(new ExamResultDto.WrongAnswerDto(
+                        item.strapiQuestionId(), "This question is no longer available",
+                        item.answer(), Map.of(), null));
                 continue;
             }
 
