@@ -320,6 +320,42 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
     int maxConsecutiveCorrect(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
 
     /**
+     * Finds user-flagged questions for a given product/domain scope.
+     * Used as Priority 0 in question selection.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @param domainCode     the domain code (nullable for all domains)
+     * @param topicCode      the topic code (nullable)
+     * @return list of flagged question progress records
+     */
+    @Query("SELECT qp FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
+           "AND qp.productCode = :productCode " +
+           "AND (:domainCode IS NULL OR qp.domainCode = :domainCode) " +
+           "AND (:topicCode IS NULL OR qp.topicCode = :topicCode) " +
+           "AND qp.flagged = true " +
+           "ORDER BY qp.lastAnsweredAt ASC NULLS LAST")
+    List<QuestionProgress> findFlagged(
+            @Param("userId") UUID keycloakUserId,
+            @Param("productCode") String productCode,
+            @Param("domainCode") String domainCode,
+            @Param("topicCode") String topicCode,
+            Pageable pageable);
+
+    /**
+     * Finds flag status for multiple questions (for breakdown view).
+     *
+     * @param keycloakUserId    the user's Keycloak ID
+     * @param strapiQuestionIds the Strapi question IDs
+     * @return list of progress records that are flagged
+     */
+    @Query("SELECT qp FROM QuestionProgress qp WHERE qp.keycloakUserId = :userId " +
+           "AND qp.strapiQuestionId IN :questionIds AND qp.flagged = true")
+    List<QuestionProgress> findFlaggedByQuestionIds(
+            @Param("userId") UUID keycloakUserId,
+            @Param("questionIds") List<String> strapiQuestionIds);
+
+    /**
      * Deletes all progress for a user (GDPR).
      *
      * @param keycloakUserId the user's Keycloak ID

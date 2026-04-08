@@ -86,6 +86,22 @@ public class QuestionSelectionService {
         // from the progress DB still exist in Strapi (questions may have been deactivated).
         Set<String> activePool = Set.copyOf(getAllQuestionIds(productCode, domainCode, effectiveTopic, locale));
 
+        // Priority 0: User-flagged questions (highest priority — user explicitly wants to practice these)
+        int flaggedAdded = 0;
+        List<QuestionProgress> flagged = progressRepository
+                .findFlagged(userId, productCode, domainCode, effectiveTopic, Pageable.ofSize(count));
+        LOG.debug("Question selection P0 flagged: user={}, available={}", userId, flagged.size());
+        for (QuestionProgress qp : flagged) {
+            if (selected.size() >= count) {
+                break;
+            }
+            if (!activePool.contains(qp.getStrapiQuestionId())) {
+                continue;
+            }
+            selected.add(qp.getStrapiQuestionId());
+            flaggedAdded++;
+        }
+
         // Priority 1: Due reviews (nextReviewAt < now) — most overdue first
         List<QuestionProgress> dueReviews = progressRepository
                 .findDueReviews(userId, productCode, domainCode, effectiveTopic, Instant.now(), Pageable.ofSize(count));
@@ -195,9 +211,9 @@ public class QuestionSelectionService {
             LOG.debug("Question selection P5 catch-all: user={}, added={}", userId, catchAllAdded);
         }
 
-        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, topic={}, total={} [due={}, weak={}, new={}, fill={}, catchAll={}]",
+        LOG.debug("Question selection COMPLETE: user={}, product={}, domain={}, topic={}, total={} [flagged={}, due={}, weak={}, new={}, fill={}, catchAll={}]",
                 userId, productCode, domainCode, effectiveTopic, selected.size(),
-                dueAdded, weakAdded, newAdded, fillAdded, catchAllAdded);
+                flaggedAdded, dueAdded, weakAdded, newAdded, fillAdded, catchAllAdded);
 
         if (selected.isEmpty()) {
             LOG.warn("No questions selected: user={}, product={}, domain={}, topic={}, requestedCount={}",

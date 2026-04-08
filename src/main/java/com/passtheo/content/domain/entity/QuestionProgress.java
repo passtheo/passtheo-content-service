@@ -59,6 +59,9 @@ public class QuestionProgress extends BaseEntity {
     @Column(name = "interval_days", nullable = false)
     private int intervalDays;
 
+    @Column(name = "is_flagged", nullable = false)
+    private boolean flagged;
+
     protected QuestionProgress() {}
 
     /**
@@ -83,6 +86,7 @@ public class QuestionProgress extends BaseEntity {
         this.totalAttempts = 0;
         this.totalCorrect = 0;
         this.intervalDays = 0;
+        this.flagged = false;
     }
 
     public UUID getKeycloakUserId() { return keycloakUserId; }
@@ -111,4 +115,6 @@ public class QuestionProgress extends BaseEntity {
     public void setNextReviewAt(Instant nextReviewAt) { this.nextReviewAt = nextReviewAt; }
     public int getIntervalDays() { return intervalDays; }
     public void setIntervalDays(int intervalDays) { this.intervalDays = intervalDays; }
+    public boolean isFlagged() { return flagged; }
+    public void setFlagged(boolean flagged) { this.flagged = flagged; }
 }

@@ -52,6 +52,22 @@ public class SessionAnswer extends BaseEntity {
     @Column(name = "answered_at", nullable = false)
     private Instant answeredAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "question_snapshot", columnDefinition = "jsonb")
+    private String questionSnapshot;
+
+    @Column(name = "previous_mastery_level", length = 20)
+    private String previousMasteryLevel;
+
+    @Column(name = "new_mastery_level", length = 20)
+    private String newMasteryLevel;
+
+    @Column(name = "domain_code", length = 100)
+    private String domainCode;
+
+    @Column(name = "domain_name")
+    private String domainName;
+
     protected SessionAnswer() {}
 
     /**
@@ -106,4 +122,14 @@ public class SessionAnswer extends BaseEntity {
     public void setQuestionOrder(int questionOrder) { this.questionOrder = questionOrder; }
     public Instant getAnsweredAt() { return answeredAt; }
     public void setAnsweredAt(Instant answeredAt) { this.answeredAt = answeredAt; }
+    public String getQuestionSnapshot() { return questionSnapshot; }
+    public void setQuestionSnapshot(String questionSnapshot) { this.questionSnapshot = questionSnapshot; }
+    public String getPreviousMasteryLevel() { return previousMasteryLevel; }
+    public void setPreviousMasteryLevel(String previousMasteryLevel) { this.previousMasteryLevel = previousMasteryLevel; }
+    public String getNewMasteryLevel() { return newMasteryLevel; }
+    public void setNewMasteryLevel(String newMasteryLevel) { this.newMasteryLevel = newMasteryLevel; }
+    public String getDomainCode() { return domainCode; }
+    public void setDomainCode(String domainCode) { this.domainCode = domainCode; }
+    public String getDomainName() { return domainName; }
+    public void setDomainName(String domainName) { this.domainName = domainName; }
 }

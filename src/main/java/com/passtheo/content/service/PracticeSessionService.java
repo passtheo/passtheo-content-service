@@ -20,8 +20,12 @@ import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.DomainSummaryDto;
+import com.passtheo.content.domain.entity.QuestionReport;
+import com.passtheo.content.dto.request.QuestionReportRequest;
+import com.passtheo.content.dto.response.BreakdownQuestionDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
+import com.passtheo.content.dto.response.SessionBreakdownDto;
 import com.passtheo.content.dto.response.SessionDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
@@ -29,6 +33,7 @@ import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
+import com.passtheo.content.repository.QuestionReportRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StudyPlanDayRepository;
 import com.passtheo.content.repository.StudyPlanRepository;
@@ -51,10 +56,13 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages practice session lifecycle: create, answer, resume, complete.
@@ -78,6 +86,7 @@ public class PracticeSessionService {
     private final StrapiContentCache strapiContentCache;
     private final StudyPlanRepository planRepository;
     private final StudyPlanDayRepository planDayRepository;
+    private final QuestionReportRepository questionReportRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
@@ -94,6 +103,7 @@ public class PracticeSessionService {
      * @param strapiContentCache       Strapi content cache
      * @param planRepository           study plan repository for progress sync
      * @param planDayRepository        study plan day repository for progress sync
+     * @param questionReportRepository question report repository
      * @param outboxEventRepository    outbox event repository
      * @param objectMapper             JSON serializer
      */
@@ -107,6 +117,7 @@ public class PracticeSessionService {
                                   StrapiContentCache strapiContentCache,
                                   StudyPlanRepository planRepository,
                                   StudyPlanDayRepository planDayRepository,
+                                  QuestionReportRepository questionReportRepository,
                                   OutboxEventRepository outboxEventRepository,
                                   ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
@@ -119,6 +130,7 @@ public class PracticeSessionService {
         this.strapiContentCache = strapiContentCache;
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;
+        this.questionReportRepository = questionReportRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
@@ -291,6 +303,27 @@ public class PracticeSessionService {
                 userAnswerJson, serializeJson(correctAnswer),
                 request.timeTakenMs(), questionOrder);
         answer.setTenantId(TenantContext.get());
+
+        // Store question snapshot for breakdown review (avoids re-fetching from Strapi)
+        answer.setQuestionSnapshot(serializeJson(answerProcessingService.buildQuestionSnapshot(question)));
+        answer.setPreviousMasteryLevel(previousLevel.name());
+        answer.setNewMasteryLevel(progress.getMasteryLevel().name());
+        String domainCode = resolveDomainCode(question, session.getProductCode(), session.getLocale());
+        answer.setDomainCode(domainCode);
+        String domainNameVal = question.domain() != null ? question.domain().name() : null;
+        if (domainNameVal == null && domainCode != null) {
+            domainNameVal = resolveDomainName(domainCode, session.getProductCode(), session.getLocale());
+        }
+        answer.setDomainName(domainNameVal);
+
+        // Auto-unflag: when a flagged question is answered correctly, remove the flag.
+        // The progress entity is already managed within this transaction — dirty checking
+        // will flush the change at commit, no explicit save needed.
+        if (isCorrect && progress.isFlagged()) {
+            progress.setFlagged(false);
+            LOG.debug("Auto-unflagged question: user={}, question={}", userId, request.strapiQuestionId());
+        }
+
         answerRepository.save(answer);
 
         // Publish question.answered outbox event
@@ -603,6 +636,10 @@ public class PracticeSessionService {
         List<EarnedAchievementDto> achievements = achievementService
                 .checkAchievements(userId, session.getProductCode());
 
+        // Compute actual mastery changes from session answers
+        List<SessionAnswer> sessionAnswers = answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId);
+        SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(sessionAnswers);
+
         LOG.info("Session completed: id={}, user={}, correct={}/{}, accuracy={}%, timeSpentSec={}",
                 sessionId, userId, session.getCorrectCount(), session.getTotalQuestions(),
                 session.getAccuracyPercent(), session.getTimeSpentSeconds());
@@ -617,7 +654,7 @@ public class PracticeSessionService {
                 session.getCorrectCount(),
                 session.getAccuracyPercent() != null ? session.getAccuracyPercent().doubleValue() : 0.0,
                 session.getTimeSpentSeconds(),
-                new SessionSummaryDto.MasteryChangesDto(0, 0, 0),
+                masteryChanges,
                 new SessionSummaryDto.StreakUpdateDto(streak.currentStreak(), streak.isNewDay()),
                 achievements
         );
@@ -738,6 +775,188 @@ public class PracticeSessionService {
                             masteryPercent, isLocked);
                 })
                 .toList();
+    }
+
+    /**
+     * Returns a full session breakdown with per-question detail for review.
+     *
+     * @param userId    the user's Keycloak ID
+     * @param sessionId the session ID
+     * @return the breakdown with all questions, answers, snapshots, and flag status
+     */
+    @Transactional(readOnly = true)
+    public SessionBreakdownDto getSessionBreakdown(@Nonnull UUID userId, @Nonnull UUID sessionId) {
+        StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                        "Session not found: " + sessionId));
+
+        List<SessionAnswer> answers = answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId);
+
+        // Batch-load flag status for all questions in this session
+        List<String> questionIds = answers.stream()
+                .map(SessionAnswer::getStrapiQuestionId)
+                .toList();
+        Set<String> flaggedIds = questionIds.isEmpty() ? Set.of()
+                : progressRepository.findFlaggedByQuestionIds(userId, questionIds)
+                        .stream()
+                        .map(QuestionProgress::getStrapiQuestionId)
+                        .collect(Collectors.toSet());
+
+        int skippedCount = 0;
+        List<BreakdownQuestionDto> breakdownQuestions = new ArrayList<>();
+
+        for (SessionAnswer sa : answers) {
+            boolean isSkipped = SKIP_ANSWER_JSON.equals(sa.getUserAnswer());
+            if (isSkipped) {
+                skippedCount++;
+            }
+
+            Map<String, Object> userAnswer = isSkipped ? null : deserializeJson(sa.getUserAnswer());
+            Map<String, Object> correctAnswer = deserializeJson(sa.getCorrectAnswer());
+            Map<String, Object> snapshot = sa.getQuestionSnapshot() != null
+                    ? deserializeJson(sa.getQuestionSnapshot()) : Map.of();
+
+            breakdownQuestions.add(new BreakdownQuestionDto(
+                    sa.getQuestionOrder(),
+                    sa.getStrapiQuestionId(),
+                    sa.getInteractionType(),
+                    sa.isCorrect(),
+                    isSkipped,
+                    userAnswer,
+                    correctAnswer,
+                    snapshot,
+                    sa.getDomainCode(),
+                    sa.getDomainName(),
+                    sa.getPreviousMasteryLevel(),
+                    sa.getNewMasteryLevel(),
+                    flaggedIds.contains(sa.getStrapiQuestionId())
+            ));
+        }
+
+        SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(answers);
+
+        return new SessionBreakdownDto(
+                session.getId(),
+                session.getStatus().name(),
+                session.getTotalQuestions(),
+                session.getCorrectCount(),
+                skippedCount,
+                session.getAccuracyPercent() != null ? session.getAccuracyPercent().doubleValue() : 0.0,
+                session.getTimeSpentSeconds(),
+                masteryChanges,
+                List.copyOf(breakdownQuestions)
+        );
+    }
+
+    /**
+     * Flags a question for extra practice.
+     *
+     * @param userId           the user's Keycloak ID
+     * @param strapiQuestionId the Strapi question ID
+     */
+    @Transactional
+    public void flagQuestion(@Nonnull UUID userId, @Nonnull String strapiQuestionId) {
+        QuestionProgress progress = progressRepository
+                .findByKeycloakUserIdAndStrapiQuestionId(userId, strapiQuestionId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                        "No progress found for question: " + strapiQuestionId));
+        progress.setFlagged(true);
+        progressRepository.save(progress);
+        LOG.debug("Question flagged: user={}, question={}", userId, strapiQuestionId);
+    }
+
+    /**
+     * Unflags a question.
+     *
+     * @param userId           the user's Keycloak ID
+     * @param strapiQuestionId the Strapi question ID
+     */
+    @Transactional
+    public void unflagQuestion(@Nonnull UUID userId, @Nonnull String strapiQuestionId) {
+        QuestionProgress progress = progressRepository
+                .findByKeycloakUserIdAndStrapiQuestionId(userId, strapiQuestionId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                        "No progress found for question: " + strapiQuestionId));
+        progress.setFlagged(false);
+        progressRepository.save(progress);
+        LOG.debug("Question unflagged: user={}, question={}", userId, strapiQuestionId);
+    }
+
+    /**
+     * Reports an error in a question.
+     *
+     * @param userId           the user's Keycloak ID
+     * @param strapiQuestionId the Strapi question document ID
+     * @param request          the report request
+     */
+    @Transactional
+    public void reportQuestion(@Nonnull UUID userId, @Nonnull String strapiQuestionId,
+                               @Nonnull QuestionReportRequest request) {
+        QuestionReport report = new QuestionReport(
+                TenantContext.get(), userId, strapiQuestionId, request.reportType(), request.comment());
+        questionReportRepository.save(report);
+        LOG.info("Question reported: user={}, question={}, type={}", userId, strapiQuestionId, request.reportType());
+    }
+
+    /**
+     * Resolves the domain code for a question, falling back to the topic-to-domain mapping cache.
+     */
+    private String resolveDomainCode(StrapiQuestionDto question, String productCode, String locale) {
+        String domainCode = question.domain() != null ? question.domain().code() : null;
+        if ((domainCode == null || domainCode.isBlank())
+                && question.topic() != null && question.topic().code() != null) {
+            domainCode = strapiContentCache.getDomainCodeForTopic(
+                    question.topic().code(), productCode, locale);
+        }
+        return domainCode;
+    }
+
+    /**
+     * Computes mastery level changes from session answer records.
+     *
+     * @param answers the session answers (already loaded)
+     * @return aggregated mastery changes
+     */
+    private SessionSummaryDto.MasteryChangesDto computeMasteryChanges(List<SessionAnswer> answers) {
+        int upgraded = 0;
+        int downgraded = 0;
+        int unchanged = 0;
+
+        for (SessionAnswer sa : answers) {
+            String prev = sa.getPreviousMasteryLevel();
+            String next = sa.getNewMasteryLevel();
+            if (prev == null || next == null || prev.equals(next)) {
+                unchanged++;
+            } else {
+                try {
+                    MasteryLevel prevLevel = MasteryLevel.valueOf(prev);
+                    MasteryLevel nextLevel = MasteryLevel.valueOf(next);
+                    if (nextLevel.ordinal() > prevLevel.ordinal()) {
+                        upgraded++;
+                    } else if (nextLevel.ordinal() < prevLevel.ordinal()) {
+                        downgraded++;
+                    } else {
+                        unchanged++;
+                    }
+                } catch (IllegalArgumentException e) {
+                    unchanged++;
+                }
+            }
+        }
+        return new SessionSummaryDto.MasteryChangesDto(upgraded, downgraded, unchanged);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> deserializeJson(String json) {
+        if (json == null || json.isBlank() || "null".equals(json)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (JsonProcessingException e) {
+            LOG.warn("Failed to deserialize JSON for breakdown: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     private String serializeJson(Object obj) {

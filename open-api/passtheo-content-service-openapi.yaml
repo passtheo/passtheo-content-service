@@ -593,6 +593,87 @@ paths:
                       icon: "https://cdn.passtheo.nl/achievements/studious.png"
                 timestamp: "2026-03-19T10:04:05Z"
 
+  /api/practice/sessions/{sessionId}/breakdown:
+    get:
+      operationId: getSessionBreakdown
+      tags: [Practice]
+      summary: Get full session breakdown for question-by-question review
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/UserHeader'
+      responses:
+        '200':
+          description: Full session breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_SessionBreakdown'
+
+  /api/progress/questions/{strapiQuestionId}/flag:
+    post:
+      operationId: flagQuestion
+      tags: [Progress]
+      summary: Flag a question for extra practice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: strapiQuestionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/UserHeader'
+      responses:
+        '204':
+          description: Question flagged
+    delete:
+      operationId: unflagQuestion
+      tags: [Progress]
+      summary: Unflag a question
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: strapiQuestionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/UserHeader'
+      responses:
+        '204':
+          description: Question unflagged
+
+  /api/content/questions/{strapiQuestionId}/report:
+    post:
+      operationId: reportQuestion
+      tags: [Content]
+      summary: Report an error in a question
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: strapiQuestionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/UserHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionReportRequest'
+      responses:
+        '201':
+          description: Report submitted
+
   # ─── MOCK EXAMS ───
   /api/exams/mock/start:
     post:
@@ -1911,3 +1992,65 @@ components:
         includeExam: { type: boolean }
         status: { type: string, enum: [PENDING, IN_PROGRESS, COMPLETED, SKIPPED] }
         message: { type: string, nullable: true }
+
+    # ─── BREAKDOWN ───
+
+    ApiResponse_SessionBreakdown:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          $ref: '#/components/schemas/SessionBreakdownDto'
+        timestamp: { type: string, format: date-time }
+
+    SessionBreakdownDto:
+      type: object
+      properties:
+        sessionId: { type: string, format: uuid }
+        status: { type: string }
+        totalQuestions: { type: integer }
+        correctCount: { type: integer }
+        skippedCount: { type: integer }
+        accuracyPercent: { type: number, format: double }
+        timeSpentSeconds: { type: integer }
+        masteryChanges:
+          $ref: '#/components/schemas/MasteryChangesDto'
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/BreakdownQuestionDto'
+
+    MasteryChangesDto:
+      type: object
+      properties:
+        upgraded: { type: integer }
+        downgraded: { type: integer }
+        unchanged: { type: integer }
+
+    BreakdownQuestionDto:
+      type: object
+      properties:
+        questionOrder: { type: integer }
+        strapiQuestionId: { type: string }
+        interactionType: { type: string }
+        isCorrect: { type: boolean }
+        isSkipped: { type: boolean }
+        userAnswer: { type: object }
+        correctAnswer: { type: object }
+        questionSnapshot: { type: object }
+        domainCode: { type: string }
+        domainName: { type: string }
+        previousMasteryLevel: { type: string, enum: [NEW, LEARNING, FAMILIAR, MASTERED] }
+        newMasteryLevel: { type: string, enum: [NEW, LEARNING, FAMILIAR, MASTERED] }
+        isFlagged: { type: boolean }
+
+    QuestionReportRequest:
+      type: object
+      required: [reportType]
+      properties:
+        reportType:
+          type: string
+          enum: [INCORRECT_ANSWER, UNCLEAR_QUESTION, WRONG_IMAGE, WRONG_EXPLANATION, OTHER]
+        comment:
+          type: string
+          nullable: true

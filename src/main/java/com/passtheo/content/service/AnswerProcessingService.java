@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -296,6 +297,82 @@ public class AnswerProcessingService {
                 .toList();
         return selectedIds.size() == correctIds.size()
                 && selectedIds.containsAll(correctIds);
+    }
+
+    /**
+     * Builds a question snapshot map for storage in session_answers.
+     * Contains all data needed to render the question in review mode without re-fetching from Strapi.
+     *
+     * @param question the Strapi question data
+     * @return snapshot map suitable for JSON serialization
+     */
+    public Map<String, Object> buildQuestionSnapshot(@Nonnull StrapiQuestionDto question) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("questionText", question.questionText());
+        snapshot.put("interactionType", question.interactionType());
+        snapshot.put("imageUrl", question.image() != null ? question.image().url() : null);
+        snapshot.put("videoUrl", question.videoUrl());
+
+        if (question.answerOptions() != null) {
+            snapshot.put("answerOptions", question.answerOptions().stream()
+                    .map(o -> Map.of(
+                            "id", String.valueOf(o.id()),
+                            "text", Objects.requireNonNullElse(o.text(), ""),
+                            "imageUrl", Objects.requireNonNullElse(o.image(), ""),
+                            "isCorrect", o.isCorrect(),
+                            "sortOrder", o.sortOrder()))
+                    .toList());
+        }
+
+        if (question.imageRegions() != null && !question.imageRegions().isEmpty()) {
+            snapshot.put("imageRegions", question.imageRegions().stream()
+                    .map(r -> Map.of(
+                            "id", String.valueOf(r.id()),
+                            "label", Objects.requireNonNullElse(r.label(), ""),
+                            "xPercent", r.xPercent(),
+                            "yPercent", r.yPercent(),
+                            "widthPercent", r.widthPercent(),
+                            "heightPercent", r.heightPercent(),
+                            "isCorrect", r.isCorrect(),
+                            "correctValue", Objects.requireNonNullElse(r.correctValue(), "")))
+                    .toList());
+        }
+
+        if (question.dragTargets() != null && !question.dragTargets().isEmpty()) {
+            snapshot.put("dragTargets", question.dragTargets().stream()
+                    .map(dt -> Map.of(
+                            "id", String.valueOf(dt.id()),
+                            "label", Objects.requireNonNullElse(dt.label(), ""),
+                            "correctValue", Objects.requireNonNullElse(dt.correctValue(), ""),
+                            "isCorrect", dt.isCorrect(),
+                            "sortOrder", dt.sortOrder(),
+                            "imageUrl", Objects.requireNonNullElse(dt.image(), "")))
+                    .toList());
+        }
+
+        if (question.explanation() != null) {
+            Map<String, Object> explanation = new LinkedHashMap<>();
+            explanation.put("text", question.explanation().text());
+            explanation.put("tip", question.explanation().tip());
+            explanation.put("legalReference", question.explanation().legalReference());
+            explanation.put("imageUrl", question.explanation().image());
+            snapshot.put("explanation", explanation);
+        }
+
+        if (question.correctBoolean() != null) {
+            snapshot.put("correctBoolean", question.correctBoolean());
+        }
+        if (question.correctNumber() != null) {
+            snapshot.put("correctNumber", question.correctNumber());
+            snapshot.put("correctNumberTolerance", question.correctNumberTolerance());
+        }
+
+        if (question.topic() != null) {
+            snapshot.put("topicCode", question.topic().code());
+            snapshot.put("topicName", question.topic().name());
+        }
+
+        return snapshot;
     }
 
     private void adjustEaseFactor(QuestionProgress progress, boolean isCorrect) {
