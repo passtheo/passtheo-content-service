@@ -20,6 +20,8 @@ import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.DomainSummaryDto;
+import com.passtheo.content.domain.entity.QuestionReport;
+import com.passtheo.content.dto.request.QuestionReportRequest;
 import com.passtheo.content.dto.response.BreakdownQuestionDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
@@ -31,6 +33,7 @@ import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
+import com.passtheo.content.repository.QuestionReportRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StudyPlanDayRepository;
 import com.passtheo.content.repository.StudyPlanRepository;
@@ -53,10 +56,13 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages practice session lifecycle: create, answer, resume, complete.
@@ -80,6 +86,7 @@ public class PracticeSessionService {
     private final StrapiContentCache strapiContentCache;
     private final StudyPlanRepository planRepository;
     private final StudyPlanDayRepository planDayRepository;
+    private final QuestionReportRepository questionReportRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
@@ -96,6 +103,7 @@ public class PracticeSessionService {
      * @param strapiContentCache       Strapi content cache
      * @param planRepository           study plan repository for progress sync
      * @param planDayRepository        study plan day repository for progress sync
+     * @param questionReportRepository question report repository
      * @param outboxEventRepository    outbox event repository
      * @param objectMapper             JSON serializer
      */
@@ -109,6 +117,7 @@ public class PracticeSessionService {
                                   StrapiContentCache strapiContentCache,
                                   StudyPlanRepository planRepository,
                                   StudyPlanDayRepository planDayRepository,
+                                  QuestionReportRepository questionReportRepository,
                                   OutboxEventRepository outboxEventRepository,
                                   ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
@@ -121,6 +130,7 @@ public class PracticeSessionService {
         this.strapiContentCache = strapiContentCache;
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;
+        this.questionReportRepository = questionReportRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
@@ -298,23 +308,19 @@ public class PracticeSessionService {
         answer.setQuestionSnapshot(serializeJson(answerProcessingService.buildQuestionSnapshot(question)));
         answer.setPreviousMasteryLevel(previousLevel.name());
         answer.setNewMasteryLevel(progress.getMasteryLevel().name());
-        String resolvedDomainCode = question.domain() != null ? question.domain().code() : null;
-        if ((resolvedDomainCode == null || resolvedDomainCode.isBlank())
-                && question.topic() != null && question.topic().code() != null) {
-            resolvedDomainCode = strapiContentCache.getDomainCodeForTopic(
-                    question.topic().code(), session.getProductCode(), session.getLocale());
+        String domainCode = resolveDomainCode(question, session.getProductCode(), session.getLocale());
+        answer.setDomainCode(domainCode);
+        String domainNameVal = question.domain() != null ? question.domain().name() : null;
+        if (domainNameVal == null && domainCode != null) {
+            domainNameVal = resolveDomainName(domainCode, session.getProductCode(), session.getLocale());
         }
-        answer.setDomainCode(resolvedDomainCode);
-        String resolvedDomainName = question.domain() != null ? question.domain().name() : null;
-        if (resolvedDomainName == null && resolvedDomainCode != null) {
-            resolvedDomainName = resolveDomainName(resolvedDomainCode, session.getProductCode(), session.getLocale());
-        }
-        answer.setDomainName(resolvedDomainName);
+        answer.setDomainName(domainNameVal);
 
-        // Auto-unflag: when a flagged question is answered correctly, remove the flag
+        // Auto-unflag: when a flagged question is answered correctly, remove the flag.
+        // The progress entity is already managed within this transaction — dirty checking
+        // will flush the change at commit, no explicit save needed.
         if (isCorrect && progress.isFlagged()) {
             progress.setFlagged(false);
-            progressRepository.save(progress);
             LOG.debug("Auto-unflagged question: user={}, question={}", userId, request.strapiQuestionId());
         }
 
@@ -631,7 +637,8 @@ public class PracticeSessionService {
                 .checkAchievements(userId, session.getProductCode());
 
         // Compute actual mastery changes from session answers
-        SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(sessionId);
+        List<SessionAnswer> sessionAnswers = answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId);
+        SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(sessionAnswers);
 
         LOG.info("Session completed: id={}, user={}, correct={}/{}, accuracy={}%, timeSpentSec={}",
                 sessionId, userId, session.getCorrectCount(), session.getTotalQuestions(),
@@ -778,7 +785,6 @@ public class PracticeSessionService {
      * @return the breakdown with all questions, answers, snapshots, and flag status
      */
     @Transactional(readOnly = true)
-    @SuppressWarnings("unchecked")
     public SessionBreakdownDto getSessionBreakdown(@Nonnull UUID userId, @Nonnull UUID sessionId) {
         StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
@@ -790,13 +796,14 @@ public class PracticeSessionService {
         List<String> questionIds = answers.stream()
                 .map(SessionAnswer::getStrapiQuestionId)
                 .toList();
-        java.util.Set<String> flaggedIds = progressRepository.findFlaggedByQuestionIds(userId, questionIds)
-                .stream()
-                .map(QuestionProgress::getStrapiQuestionId)
-                .collect(java.util.stream.Collectors.toSet());
+        Set<String> flaggedIds = questionIds.isEmpty() ? Set.of()
+                : progressRepository.findFlaggedByQuestionIds(userId, questionIds)
+                        .stream()
+                        .map(QuestionProgress::getStrapiQuestionId)
+                        .collect(Collectors.toSet());
 
         int skippedCount = 0;
-        List<BreakdownQuestionDto> breakdownQuestions = new java.util.ArrayList<>();
+        List<BreakdownQuestionDto> breakdownQuestions = new ArrayList<>();
 
         for (SessionAnswer sa : answers) {
             boolean isSkipped = SKIP_ANSWER_JSON.equals(sa.getUserAnswer());
@@ -826,7 +833,7 @@ public class PracticeSessionService {
             ));
         }
 
-        SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(sessionId);
+        SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(answers);
 
         return new SessionBreakdownDto(
                 session.getId(),
@@ -876,10 +883,41 @@ public class PracticeSessionService {
     }
 
     /**
-     * Computes mastery level changes from session answer records.
+     * Reports an error in a question.
+     *
+     * @param userId           the user's Keycloak ID
+     * @param strapiQuestionId the Strapi question document ID
+     * @param request          the report request
      */
-    private SessionSummaryDto.MasteryChangesDto computeMasteryChanges(UUID sessionId) {
-        List<SessionAnswer> answers = answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId);
+    @Transactional
+    public void reportQuestion(@Nonnull UUID userId, @Nonnull String strapiQuestionId,
+                               @Nonnull QuestionReportRequest request) {
+        QuestionReport report = new QuestionReport(
+                TenantContext.get(), userId, strapiQuestionId, request.reportType(), request.comment());
+        questionReportRepository.save(report);
+        LOG.info("Question reported: user={}, question={}, type={}", userId, strapiQuestionId, request.reportType());
+    }
+
+    /**
+     * Resolves the domain code for a question, falling back to the topic-to-domain mapping cache.
+     */
+    private String resolveDomainCode(StrapiQuestionDto question, String productCode, String locale) {
+        String domainCode = question.domain() != null ? question.domain().code() : null;
+        if ((domainCode == null || domainCode.isBlank())
+                && question.topic() != null && question.topic().code() != null) {
+            domainCode = strapiContentCache.getDomainCodeForTopic(
+                    question.topic().code(), productCode, locale);
+        }
+        return domainCode;
+    }
+
+    /**
+     * Computes mastery level changes from session answer records.
+     *
+     * @param answers the session answers (already loaded)
+     * @return aggregated mastery changes
+     */
+    private SessionSummaryDto.MasteryChangesDto computeMasteryChanges(List<SessionAnswer> answers) {
         int upgraded = 0;
         int downgraded = 0;
         int unchanged = 0;
@@ -890,28 +928,22 @@ public class PracticeSessionService {
             if (prev == null || next == null || prev.equals(next)) {
                 unchanged++;
             } else {
-                int prevOrd = masteryOrdinal(prev);
-                int nextOrd = masteryOrdinal(next);
-                if (nextOrd > prevOrd) {
-                    upgraded++;
-                } else if (nextOrd < prevOrd) {
-                    downgraded++;
-                } else {
+                try {
+                    MasteryLevel prevLevel = MasteryLevel.valueOf(prev);
+                    MasteryLevel nextLevel = MasteryLevel.valueOf(next);
+                    if (nextLevel.ordinal() > prevLevel.ordinal()) {
+                        upgraded++;
+                    } else if (nextLevel.ordinal() < prevLevel.ordinal()) {
+                        downgraded++;
+                    } else {
+                        unchanged++;
+                    }
+                } catch (IllegalArgumentException e) {
                     unchanged++;
                 }
             }
         }
         return new SessionSummaryDto.MasteryChangesDto(upgraded, downgraded, unchanged);
-    }
-
-    private int masteryOrdinal(String level) {
-        return switch (level) {
-            case "NEW" -> 0;
-            case "LEARNING" -> 1;
-            case "FAMILIAR" -> 2;
-            case "MASTERED" -> 3;
-            default -> -1;
-        };
     }
 
     @SuppressWarnings("unchecked")

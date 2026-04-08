@@ -1,8 +1,6 @@
 package com.passtheo.content.controller;
 
-import com.passtheo.content.domain.entity.QuestionReport;
 import com.passtheo.content.domain.enums.DomainStrength;
-import com.passtheo.content.domain.enums.ReportType;
 import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.dto.request.QuestionReportRequest;
 import com.passtheo.content.dto.response.CountryDto;
@@ -17,11 +15,10 @@ import com.passtheo.content.dto.response.TopicWithProgressDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
-import com.passtheo.content.repository.QuestionReportRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
+import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.content.service.ReadinessService;
-import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.dto.ApiResponse;
 import jakarta.annotation.Nonnull;
 import jakarta.validation.Valid;
@@ -57,29 +54,29 @@ public class ContentController {
 
     private final StrapiContentCache strapiContentCache;
     private final QuestionProgressRepository questionProgressRepository;
-    private final QuestionReportRepository questionReportRepository;
     private final EntitlementChecker entitlementChecker;
     private final OnboardingCatalogService onboardingCatalogService;
+    private final PracticeSessionService practiceSessionService;
 
     /**
      * Constructs the content controller.
      *
      * @param strapiContentCache         Strapi content cache
      * @param questionProgressRepository question progress repository
-     * @param questionReportRepository   question report repository
      * @param entitlementChecker         entitlement checker
      * @param onboardingCatalogService   onboarding catalog service
+     * @param practiceSessionService     practice session service (for report)
      */
     public ContentController(StrapiContentCache strapiContentCache,
                              QuestionProgressRepository questionProgressRepository,
-                             QuestionReportRepository questionReportRepository,
                              EntitlementChecker entitlementChecker,
-                             OnboardingCatalogService onboardingCatalogService) {
+                             OnboardingCatalogService onboardingCatalogService,
+                             PracticeSessionService practiceSessionService) {
         this.strapiContentCache = strapiContentCache;
         this.questionProgressRepository = questionProgressRepository;
-        this.questionReportRepository = questionReportRepository;
         this.entitlementChecker = entitlementChecker;
         this.onboardingCatalogService = onboardingCatalogService;
+        this.practiceSessionService = practiceSessionService;
     }
 
     /**
@@ -320,11 +317,7 @@ public class ContentController {
             @PathVariable @Nonnull String strapiQuestionId,
             @RequestBody @Valid @Nonnull QuestionReportRequest request) {
 
-        ReportType reportType = ReportType.valueOf(request.reportType());
-        QuestionReport report = new QuestionReport(
-                TenantContext.get(), userId, strapiQuestionId, reportType, request.comment());
-        questionReportRepository.save(report);
-        LOG.info("Question reported: user={}, question={}, type={}", userId, strapiQuestionId, reportType);
+        practiceSessionService.reportQuestion(userId, strapiQuestionId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(null, MDC.get("traceId")));
     }
 

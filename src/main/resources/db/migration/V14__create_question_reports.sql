@@ -8,7 +8,9 @@ CREATE TABLE question_reports (
     report_type         VARCHAR(50)  NOT NULL
         CHECK (report_type IN ('INCORRECT_ANSWER', 'UNCLEAR_QUESTION', 'WRONG_IMAGE', 'WRONG_EXPLANATION', 'OTHER')),
     comment             TEXT,
-    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at          TIMESTAMPTZ
 );
 
 -- RLS

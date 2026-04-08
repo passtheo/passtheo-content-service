@@ -1,11 +1,12 @@
 package com.passtheo.content.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
+import com.passtheo.content.domain.enums.ReportType;
+import jakarta.annotation.Nonnull;
 
 /**
  * Request to report an error in a question.
  */
 public record QuestionReportRequest(
-    @NotBlank String reportType,
+    @Nonnull ReportType reportType,
     String comment
 ) {}

@@ -5,9 +5,9 @@ import com.passtheo.content.dto.response.TopicWithProgressDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiTopicDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
-import com.passtheo.content.repository.QuestionReportRepository;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
+import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.shared.core.dto.ApiResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,9 +31,9 @@ class ContentControllerListTopicsTest {
 
     @Mock private StrapiContentCache strapiContentCache;
     @Mock private QuestionProgressRepository questionProgressRepository;
-    @Mock private QuestionReportRepository questionReportRepository;
     @Mock private EntitlementChecker entitlementChecker;
     @Mock private OnboardingCatalogService onboardingCatalogService;
+    @Mock private PracticeSessionService practiceSessionService;
 
     private ContentController controller;
 
@@ -46,8 +46,8 @@ class ContentControllerListTopicsTest {
     @BeforeEach
     void setUp() {
         controller = new ContentController(
-                strapiContentCache, questionProgressRepository, questionReportRepository,
-                entitlementChecker, onboardingCatalogService);
+                strapiContentCache, questionProgressRepository,
+                entitlementChecker, onboardingCatalogService, practiceSessionService);
     }
 
     @Test
