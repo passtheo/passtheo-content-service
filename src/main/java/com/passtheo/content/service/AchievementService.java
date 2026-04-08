@@ -155,8 +155,11 @@ public class AchievementService {
                         int total = strapiContentCache.getQuestionCountByDomain(agg.getDomainCode(), DEFAULT_LOCALE);
                         double accuracy = agg.getTotalAttempts() > 0
                                 ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                        // Clamp attempted count to active total — progress records may reference
+                        // deactivated questions no longer in the Strapi active pool.
+                        long clampedAttempted = Math.min(agg.getAttemptedCount(), total);
                         double coverage = total > 0
-                                ? (double) agg.getAttemptedCount() / total * 100.0 : 0.0;
+                                ? (double) clampedAttempted / total * 100.0 : 0.0;
                         return ReadinessService.classifyDomainStrength(accuracy, coverage) == DomainStrength.MASTERED;
                     })
                     .count();

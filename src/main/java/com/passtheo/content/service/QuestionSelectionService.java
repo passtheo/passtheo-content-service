@@ -82,6 +82,10 @@ public class QuestionSelectionService {
         // Normalise blank topicCode to null for consistent IS NULL handling in queries.
         String effectiveTopic = (topicCode != null && !topicCode.isBlank()) ? topicCode : null;
 
+        // Fetch the active question pool once upfront — used to validate that question IDs
+        // from the progress DB still exist in Strapi (questions may have been deactivated).
+        Set<String> activePool = Set.copyOf(getAllQuestionIds(productCode, domainCode, effectiveTopic, locale));
+
         // Priority 1: Due reviews (nextReviewAt < now) — most overdue first
         List<QuestionProgress> dueReviews = progressRepository
                 .findDueReviews(userId, productCode, domainCode, effectiveTopic, Instant.now(), Pageable.ofSize(count));
@@ -90,6 +94,10 @@ public class QuestionSelectionService {
         for (QuestionProgress qp : dueReviews) {
             if (selected.size() >= count) {
                 break;
+            }
+            // Skip deactivated questions that still have progress records
+            if (!activePool.contains(qp.getStrapiQuestionId())) {
+                continue;
             }
             selected.add(qp.getStrapiQuestionId());
             dueAdded++;
@@ -103,6 +111,10 @@ public class QuestionSelectionService {
             for (QuestionProgress qp : weak) {
                 if (selected.size() >= count) {
                     break;
+                }
+                // Skip deactivated questions that still have progress records
+                if (!activePool.contains(qp.getStrapiQuestionId())) {
+                    continue;
                 }
                 if (!selected.contains(qp.getStrapiQuestionId())) {
                     selected.add(qp.getStrapiQuestionId());
@@ -122,8 +134,8 @@ public class QuestionSelectionService {
             return List.copyOf(selected);
         }
 
-        // Fetch full question pool once — reused in P3 and P5.
-        List<String> allQuestionIds = getAllQuestionIds(productCode, domainCode, effectiveTopic, locale);
+        // Reuse the active pool for P3 and P5.
+        List<String> allQuestionIds = List.copyOf(activePool);
 
         // Priority 3: New (unseen) questions — shuffled randomly for variety
         if (selected.size() < count) {
@@ -154,6 +166,10 @@ public class QuestionSelectionService {
             for (QuestionProgress qp : familiar) {
                 if (selected.size() >= count) {
                     break;
+                }
+                // Skip deactivated questions that still have progress records
+                if (!activePool.contains(qp.getStrapiQuestionId())) {
+                    continue;
                 }
                 if (!selected.contains(qp.getStrapiQuestionId())) {
                     selected.add(qp.getStrapiQuestionId());

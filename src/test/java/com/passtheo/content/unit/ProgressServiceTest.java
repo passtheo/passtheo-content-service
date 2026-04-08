@@ -157,6 +157,54 @@ class ProgressServiceTest {
         assertEquals(40, result.newCount(), "40 unseen questions should count as NEW");
     }
 
+    // ─── Deactivated question resilience ───
+
+    @Test
+    void getMasteryStats_clampsWhenProgressExceedsActivePool() {
+        // Scenario: active pool is 80 questions, but user has progress on 100 (20 were deactivated)
+        when(strapiContentCache.getQuestionCount(eq(PRODUCT), eq(LOCALE))).thenReturn(80);
+        when(progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
+                USER_ID, PRODUCT, MasteryLevel.NEW)).thenReturn(10L);
+        when(progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
+                USER_ID, PRODUCT, MasteryLevel.LEARNING)).thenReturn(20L);
+        when(progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
+                USER_ID, PRODUCT, MasteryLevel.FAMILIAR)).thenReturn(30L);
+        when(progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
+                USER_ID, PRODUCT, MasteryLevel.MASTERED)).thenReturn(40L);
+
+        MasteryStatsDto result = progressService.getMasteryStats(USER_ID, PRODUCT, LOCALE);
+
+        assertEquals(80, result.totalQuestions());
+        // Sum of all levels (100) > active pool (80) → counts should be scaled down
+        int total = result.newCount() + result.learning() + result.familiar() + result.mastered();
+        assertTrue(total <= 80, "Total mastery counts should not exceed active pool size, got " + total);
+        // Percentages should not exceed 100%
+        assertTrue(result.masteredPercent() <= 100.0, "Mastered % should not exceed 100");
+        assertTrue(result.learningPercent() <= 100.0, "Learning % should not exceed 100");
+    }
+
+    @Test
+    void getDomainProgress_coverageClampedWhenAttemptedExceedsDomainTotal() {
+        // Domain has 20 active questions, but user has attempted 30 (10 deactivated)
+        StrapiDomainDto domain = new StrapiDomainDto(
+                1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
+                "desc", null, "#E63946", 20, true, true, 1);
+
+        QuestionProgressRepository.DomainMasteryProjection agg = buildProjection(
+                "verkeersborden", 30L, 25L, 40L, 8L);
+
+        when(progressRepository.aggregateByDomain(USER_ID, PRODUCT)).thenReturn(List.of(agg));
+        when(strapiContentCache.getDomains(eq(PRODUCT), eq(LOCALE))).thenReturn(List.of(domain));
+        when(strapiContentCache.getQuestionCountByDomain(eq("verkeersborden"), eq(LOCALE))).thenReturn(20);
+
+        List<DomainProgressDto> result = progressService.getDomainProgress(USER_ID, PRODUCT, LOCALE);
+
+        assertEquals(1, result.size());
+        DomainProgressDto dto = result.get(0);
+        // Coverage should be clamped: min(30, 20) / 20 = 100%, not 150%
+        assertTrue(dto.coveragePercent() <= 100.0, "Coverage should not exceed 100%, got " + dto.coveragePercent());
+    }
+
     @Test
     void getReadinessTrend_returns_empty_for_no_history() {
         when(snapshotRepository.findByKeycloakUserIdAndProductCodeAndSnapshotDateAfterOrderBySnapshotDateAsc(

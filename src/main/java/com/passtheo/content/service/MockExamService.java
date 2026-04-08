@@ -215,7 +215,29 @@ public class MockExamService {
         for (int i = 0; i < request.answers().size(); i++) {
             SubmitExamRequest.ExamAnswerItem item = request.answers().get(i);
             StrapiQuestionDto question = strapiContentCache.getQuestion(item.strapiQuestionId(), locale);
+
+            // When a question was deleted/deactivated in Strapi after the exam started,
+            // we still record the answer but cannot grade it — treat as incorrect.
             if (question == null) {
+                LOG.warn("Exam question deleted/deactivated during exam: examId={}, questionId={}",
+                        examId, item.strapiQuestionId());
+
+                ExamAnswer examAnswer = new ExamAnswer();
+                examAnswer.setTenantId(TenantContext.get());
+                examAnswer.setExamAttemptId(examId);
+                examAnswer.setStrapiQuestionId(item.strapiQuestionId());
+                examAnswer.setQuestionVersion(0);
+                examAnswer.setDomainCode("unknown");
+                examAnswer.setCorrect(false);
+                examAnswer.setUserAnswer(serializeJson(item.answer()));
+                examAnswer.setCorrectAnswer("{}");
+                examAnswer.setTimeTakenMs(item.timeTakenMs());
+                examAnswer.setQuestionOrder(i + 1);
+                examAnswer.setAnsweredAt(Instant.now());
+                examAnswerRepository.save(examAnswer);
+
+                domainStats.computeIfAbsent("unknown", k -> new int[]{0, 0});
+                domainStats.get("unknown")[1]++;
                 continue;
             }
 

@@ -447,6 +447,63 @@ class ReadinessServiceTest {
         return exam;
     }
 
+    // ─── DEACTIVATED QUESTION RESILIENCE ───
+
+    @Test
+    void calculate_coverageClampedWhenAttemptedExceedsActivePool() {
+        // Scenario: user attempted 120 questions, but 20 were later deactivated in Strapi
+        // Active pool is now 100. Coverage should be clamped to 100/100 = 100%, not 120/100 = 120%.
+        setupMocks(100, 120, 100, null, 44);
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.coverageScore()).isLessThanOrEqualTo(100.0);
+        // coverage = 100% (clamped), accuracy = 100/120*100 = 83.3%, exam = 0
+        // readiness = 0.40*100 + 0.35*83.3 + 0.25*0 = 40 + 29.17 = 69.17
+        assertThat(result.readinessScore()).isLessThanOrEqualTo(100.0);
+    }
+
+    @Test
+    void calculate_domainCoverageClampedWhenAttemptedExceedsDomainTotal() {
+        // Domain has 20 active questions, but user has progress records for 25 (5 were deactivated)
+        StrapiDomainDto domain = new StrapiDomainDto(
+                1, null, "Verkeersborden", "verkeersborden", "verkeersborden",
+                "desc", null, "#E63946", 20, true, true, 1);
+
+        QuestionProgressRepository.DomainMasteryProjection agg = mock(
+                QuestionProgressRepository.DomainMasteryProjection.class);
+        when(agg.getDomainCode()).thenReturn("verkeersborden");
+        when(agg.getAttemptedCount()).thenReturn(25L);
+        when(agg.getCorrectCount()).thenReturn(20L);
+        when(agg.getTotalAttempts()).thenReturn(30L);
+
+        when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE)))
+                .thenReturn(List.of(agg));
+        when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE)))
+                .thenReturn(List.of(domain));
+        when(strapiContentCache.getQuestionCountByDomain(eq("verkeersborden"), eq(LOCALE)))
+                .thenReturn(20);
+        when(strapiContentCache.getQuestionCount(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(20);
+        when(progressRepository.countAttempted(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(25);
+        when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(20);
+        when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(30);
+        when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
+                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
+        when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
+        when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
+                eq(USER_ID), eq(PRODUCT_CODE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ReadinessScore result = service.calculate(USER_ID, PRODUCT_CODE, LOCALE);
+
+        assertThat(result.domainStrengths()).hasSize(1);
+        ReadinessScore.DomainStrengthValue dsv = result.domainStrengths().get(0);
+        // Domain coverage should be clamped: min(25, 20) / 20 = 100%, not 125%
+        assertThat(dsv.coveragePercent()).isLessThanOrEqualTo(100.0);
+    }
+
     // ─── DOMAIN STRENGTH CLASSIFICATION ───
 
     @Test

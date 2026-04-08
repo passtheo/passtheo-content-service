@@ -79,8 +79,11 @@ public class ProgressService {
                     }
                     double accuracy = agg.getTotalAttempts() > 0
                             ? (double) agg.getCorrectCount() / agg.getTotalAttempts() * 100.0 : 0.0;
+                    // Clamp attempted count to active total — progress records may reference
+                    // deactivated questions that are no longer in the Strapi active pool.
+                    long clampedAttempted = Math.min(agg.getAttemptedCount(), totalQuestions);
                     double coverage = totalQuestions > 0
-                            ? (double) agg.getAttemptedCount() / totalQuestions * 100.0 : 0.0;
+                            ? (double) clampedAttempted / totalQuestions * 100.0 : 0.0;
                     DomainStrength strength = ReadinessService.classifyDomainStrength(accuracy, coverage);
                     return new DomainProgressDto(
                             d.code(), d.name(), totalQuestions,
@@ -113,6 +116,18 @@ public class ProgressService {
                 userId, productCode, MasteryLevel.FAMILIAR);
         long masteredCount = progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
                 userId, productCode, MasteryLevel.MASTERED);
+
+        // Progress records may reference deactivated questions — clamp sum to active total
+        // so percentages never exceed 100%.
+        long seenTotal = newCount + learningCount + familiarCount + masteredCount;
+        if (seenTotal > totalQuestions && totalQuestions > 0) {
+            // Proportionally scale down to fit active pool
+            double scale = (double) totalQuestions / seenTotal;
+            masteredCount = Math.round(masteredCount * scale);
+            familiarCount = Math.round(familiarCount * scale);
+            learningCount = Math.round(learningCount * scale);
+            newCount = Math.round(newCount * scale);
+        }
 
         // Questions not yet seen are also NEW
         long seenNew = newCount;

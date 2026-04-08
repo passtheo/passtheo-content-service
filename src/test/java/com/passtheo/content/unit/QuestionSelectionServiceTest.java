@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.springframework.data.domain.Pageable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
+
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
@@ -77,8 +77,11 @@ class QuestionSelectionServiceTest {
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
                 .thenReturn(Set.of("q-due-1"));
+        // Active pool includes the due-review ID + 9 others
+        List<StrapiQuestionDto> pool = new ArrayList<>(buildQuestions(DOMAIN, 9));
+        pool.add(buildSingleQuestion("q-due-1"));
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
-                .thenReturn(buildQuestions(DOMAIN, 10));
+                .thenReturn(pool);
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, null, 5, LOCALE);
 
@@ -96,8 +99,11 @@ class QuestionSelectionServiceTest {
                 .thenReturn(List.of(weak));
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
                 .thenReturn(Set.of("q-weak-1"));
+        // Active pool includes the weak question ID
+        List<StrapiQuestionDto> pool = new ArrayList<>(buildQuestions(DOMAIN, 9));
+        pool.add(buildSingleQuestion("q-weak-1"));
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
-                .thenReturn(buildQuestions(DOMAIN, 10));
+                .thenReturn(pool);
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, null, 5, LOCALE);
 
@@ -114,8 +120,11 @@ class QuestionSelectionServiceTest {
                 .thenReturn(List.of(weakQ));
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
                 .thenReturn(Set.of("q-1"));
+        // Active pool includes the progress question ID
+        List<StrapiQuestionDto> pool = new ArrayList<>(buildQuestions(DOMAIN, 4));
+        pool.add(buildSingleQuestion("q-1"));
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
-                .thenReturn(buildQuestions(DOMAIN, 5));
+                .thenReturn(pool);
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, null, 3, LOCALE);
 
@@ -165,9 +174,10 @@ class QuestionSelectionServiceTest {
         when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
         when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
-                .thenReturn(Set.of());
+                .thenReturn(Set.of("q-familiar-1"));
+        // Active pool includes only the familiar question — no new unseen questions
         when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
-                .thenReturn(List.of());
+                .thenReturn(buildQuestionsWithIds(List.of("q-familiar-1")));
         when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Pageable.class)))
                 .thenReturn(List.of(familiar));
 
@@ -190,6 +200,9 @@ class QuestionSelectionServiceTest {
                 .thenReturn(new ArrayList<>(List.of(due)));
         when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of(weak1, weak2, weak3, weak4));
+        // Active pool must contain the due/weak question IDs
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestionsWithIds(List.of("q-due", "q-weak-1", "q-weak-2", "q-weak-3", "q-weak-4", "q-new-1")));
 
         List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null,
                 SessionType.WEAK_REVIEW, 10, LOCALE);
@@ -207,10 +220,79 @@ class QuestionSelectionServiceTest {
                 .thenReturn(new ArrayList<>(List.of(due)));
         when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
                 .thenReturn(List.of());
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestionsWithIds(List.of("q-due")));
 
         org.junit.jupiter.api.Assertions.assertThrows(AppException.class, () ->
                 service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null,
                         SessionType.WEAK_REVIEW, 10, LOCALE));
+    }
+
+    // ─── Deactivated question filtering ───
+
+    @Test
+    void dueReviews_skipsDeactivatedQuestions() {
+        // q-due-1 exists in active pool, q-due-2 was deactivated
+        QuestionProgress due1 = buildProgress("q-due-1", Instant.now().minus(1, ChronoUnit.DAYS));
+        QuestionProgress due2 = buildProgress("q-due-2", Instant.now().minus(2, ChronoUnit.DAYS));
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>(List.of(due1, due2)));
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
+                .thenReturn(Set.of("q-due-1", "q-due-2"));
+        // Active pool only has q-due-1 + new questions (q-due-2 was deactivated)
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestionsWithIds(List.of("q-due-1", "q-new-1", "q-new-2", "q-new-3", "q-new-4")));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, null, 5, LOCALE);
+
+        assertTrue(selected.contains("q-due-1"), "Active due review should be selected");
+        assertFalse(selected.contains("q-due-2"), "Deactivated question should be excluded");
+        assertEquals(5, selected.size());
+    }
+
+    @Test
+    void weakQuestions_skipsDeactivatedQuestions() {
+        QuestionProgress weak1 = buildProgress("q-weak-active", null);
+        QuestionProgress weak2 = buildProgress("q-weak-deactivated", null);
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>());
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of(weak1, weak2));
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
+                .thenReturn(Set.of("q-weak-active", "q-weak-deactivated"));
+        // Only q-weak-active is in the active pool
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestionsWithIds(List.of("q-weak-active", "q-new-1", "q-new-2", "q-new-3", "q-new-4")));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, null, 5, LOCALE);
+
+        assertTrue(selected.contains("q-weak-active"), "Active weak question should be selected");
+        assertFalse(selected.contains("q-weak-deactivated"), "Deactivated weak question should be excluded");
+    }
+
+    @Test
+    void familiarFill_skipsDeactivatedQuestions() {
+        // Request 5 questions but only 3 active exist — P4 (familiar) will be tried to fill the gap.
+        // The familiar question is deactivated so it should be skipped.
+        QuestionProgress familiar = buildProgress("q-fam-deactivated", Instant.now().plus(3, ChronoUnit.DAYS));
+        when(progressRepository.findDueReviews(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Instant.class), any(Pageable.class)))
+                .thenReturn(new ArrayList<>());
+        when(progressRepository.findWeak(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), anyInt(), any(Pageable.class)))
+                .thenReturn(List.of());
+        // Active pool only has 3 new questions — q-fam-deactivated is NOT in the pool
+        when(strapiContentCache.getQuestionsByDomain(eq(DOMAIN), eq(LOCALE)))
+                .thenReturn(buildQuestions(DOMAIN, 3));
+        when(progressRepository.findSeenQuestionIds(USER_ID, PRODUCT, DOMAIN, null))
+                .thenReturn(Set.of("q-fam-deactivated"));
+        when(progressRepository.findFamiliarSorted(eq(USER_ID), eq(PRODUCT), eq(DOMAIN), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(familiar));
+
+        List<String> selected = service.selectQuestions(USER_ID, PRODUCT, DOMAIN, null, null, 5, LOCALE);
+
+        assertFalse(selected.contains("q-fam-deactivated"), "Deactivated familiar question should be excluded");
+        assertEquals(3, selected.size(), "Only 3 active questions available");
     }
 
     @Test
@@ -336,6 +418,32 @@ class QuestionSelectionServiceTest {
                         null, null, null, null, 1, false, false, null, null,
                         List.of(), null, null, null, null, null,
                         new StrapiRelationDto(0, null, domainCode, null),
+                        new StrapiRelationDto(0, null, "topic", null),
+                        null))
+                .toList();
+    }
+
+    private StrapiQuestionDto buildSingleQuestion(String documentId) {
+        return new StrapiQuestionDto(
+                0, documentId, "Question " + documentId,
+                "multiple_choice", "medium",
+                null, null, null, null, 1, false, false, null, null,
+                List.of(), null, null, null, null, null,
+                new StrapiRelationDto(0, null, DOMAIN, null),
+                new StrapiRelationDto(0, null, "topic", null),
+                null);
+    }
+
+    private List<StrapiQuestionDto> buildQuestionsWithIds(List<String> ids) {
+        return java.util.stream.IntStream.range(0, ids.size())
+                .mapToObj(i -> new StrapiQuestionDto(
+                        i + 1,
+                        ids.get(i),
+                        "Question " + ids.get(i),
+                        "multiple_choice", "medium",
+                        null, null, null, null, 1, false, false, null, null,
+                        List.of(), null, null, null, null, null,
+                        new StrapiRelationDto(0, null, DOMAIN, null),
                         new StrapiRelationDto(0, null, "topic", null),
                         null))
                 .toList();
