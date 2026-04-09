@@ -53,22 +53,4 @@ public record ExamResultDto(
         String label
     ) {}
 
-    /**
-     * Streak update from this exam submission.
-     */
-    public record StreakUpdateDto(
-        int currentStreak,
-        boolean isNewDay
-    ) {}
-
-    /**
-     * XP earned from this exam submission.
-     */
-    public record XpUpdateDto(
-        int xpEarned,
-        int totalXp,
-        int currentLevel,
-        int xpForNextLevel,
-        boolean leveledUp
-    ) {}
 }

@@ -27,22 +27,4 @@ public record SessionSummaryDto(
         int unchanged
     ) {}
 
-    /**
-     * Streak update from this session.
-     */
-    public record StreakUpdateDto(
-        int currentStreak,
-        boolean isNewDay
-    ) {}
-
-    /**
-     * XP earned from this session completion.
-     */
-    public record XpUpdateDto(
-        int xpEarned,
-        int totalXp,
-        int currentLevel,
-        int xpForNextLevel,
-        boolean leveledUp
-    ) {}
 }

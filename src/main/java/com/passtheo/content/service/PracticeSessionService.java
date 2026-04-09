@@ -28,6 +28,8 @@ import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.dto.response.SessionBreakdownDto;
 import com.passtheo.content.dto.response.SessionDto;
+import com.passtheo.content.dto.response.StreakUpdateDto;
+import com.passtheo.content.dto.response.XpUpdateDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
@@ -671,9 +673,9 @@ public class PracticeSessionService {
                 session.getAccuracyPercent() != null ? session.getAccuracyPercent().doubleValue() : 0.0,
                 session.getTimeSpentSeconds(),
                 masteryChanges,
-                new SessionSummaryDto.StreakUpdateDto(streak.currentStreak(), streak.isNewDay()),
+                new StreakUpdateDto(streak.currentStreak(), streak.isNewDay()),
                 achievements,
-                new SessionSummaryDto.XpUpdateDto(XpService.XP_PRACTICE_COMPLETE, xpResult.totalXp(),
+                new XpUpdateDto(XpService.XP_PRACTICE_COMPLETE, xpResult.totalXp(),
                         xpResult.currentLevel(), xpResult.xpForNextLevel(), xpResult.leveledUp())
         );
     }

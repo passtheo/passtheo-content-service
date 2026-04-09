@@ -115,7 +115,7 @@ public class ExamController {
     public ResponseEntity<ApiResponse<SessionBreakdownDto>> getExamBreakdown(
             @PathVariable @Nonnull UUID examId,
             @RequestHeader("X-Keycloak-User-ID") UUID userId,
-            @RequestParam(defaultValue = "nl") String locale) {
+            @RequestParam(defaultValue = "nl") @Nonnull String locale) {
 
         SessionBreakdownDto breakdown = mockExamService.getExamBreakdown(userId, examId, locale);
         return ResponseEntity.ok(ApiResponse.success(breakdown, MDC.get("traceId")));

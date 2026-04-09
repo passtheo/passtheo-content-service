@@ -50,16 +50,8 @@ public class UserXp extends BaseEntity {
         return keycloakUserId;
     }
 
-    public void setKeycloakUserId(UUID keycloakUserId) {
-        this.keycloakUserId = keycloakUserId;
-    }
-
     public String getProductCode() {
         return productCode;
-    }
-
-    public void setProductCode(String productCode) {
-        this.productCode = productCode;
     }
 
     public int getTotalXp() {

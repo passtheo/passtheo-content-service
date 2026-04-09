@@ -20,6 +20,8 @@ import com.passtheo.content.dto.response.ExamResultDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.dto.response.SessionBreakdownDto;
 import com.passtheo.content.dto.response.SessionSummaryDto;
+import com.passtheo.content.dto.response.StreakUpdateDto;
+import com.passtheo.content.dto.response.XpUpdateDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
@@ -367,8 +369,8 @@ public class MockExamService {
                 examId, passed, correctCount, totalQuestions,
                 attempt.getPassScore(), scorePercent, timeTakenSeconds,
                 domainBreakdown, wrongAnswers, readinessUpdate, achievements,
-                new ExamResultDto.StreakUpdateDto(streakResult.currentStreak(), streakResult.isNewDay()),
-                new ExamResultDto.XpUpdateDto(totalXpEarned, xpResult.totalXp(),
+                new StreakUpdateDto(streakResult.currentStreak(), streakResult.isNewDay()),
+                new XpUpdateDto(totalXpEarned, xpResult.totalXp(),
                         xpResult.currentLevel(), xpResult.xpForNextLevel(), xpResult.leveledUp())
         );
     }
