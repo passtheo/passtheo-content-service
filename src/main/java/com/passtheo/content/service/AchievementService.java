@@ -101,7 +101,7 @@ public class AchievementService {
                 achievementRepository.save(earned);
 
                 newlyEarned.add(new EarnedAchievementDto(
-                        def.code(), def.name(), def.icon()));
+                        def.code(), def.name(), def.icon(), def.xpReward()));
 
                 publishAchievementEarnedEvent(TenantContext.get(), userId,
                         def.code(), def.name(), def.icon(), currentValue);

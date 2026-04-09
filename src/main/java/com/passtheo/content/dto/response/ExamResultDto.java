@@ -18,7 +18,9 @@ public record ExamResultDto(
     List<DomainBreakdownDto> domainBreakdown,
     List<WrongAnswerDto> wrongAnswers,
     ReadinessUpdateDto readinessUpdate,
-    List<EarnedAchievementDto> newAchievements
+    List<EarnedAchievementDto> newAchievements,
+    StreakUpdateDto streakUpdate,
+    XpUpdateDto xpUpdate
 ) {
     /**
      * Per-domain exam breakdown.
@@ -49,5 +51,24 @@ public record ExamResultDto(
         double previousScore,
         double newScore,
         String label
+    ) {}
+
+    /**
+     * Streak update from this exam submission.
+     */
+    public record StreakUpdateDto(
+        int currentStreak,
+        boolean isNewDay
+    ) {}
+
+    /**
+     * XP earned from this exam submission.
+     */
+    public record XpUpdateDto(
+        int xpEarned,
+        int totalXp,
+        int currentLevel,
+        int xpForNextLevel,
+        boolean leveledUp
     ) {}
 }

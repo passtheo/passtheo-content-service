@@ -13,6 +13,7 @@ import com.passtheo.shared.outbox.entity.OutboxStatus;
 import com.passtheo.content.domain.enums.SessionStatus;
 import com.passtheo.content.domain.enums.SessionType;
 import com.passtheo.content.domain.valueobject.StreakResult;
+import com.passtheo.content.domain.valueobject.XpResult;
 import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.ActiveSessionDto;
@@ -83,6 +84,7 @@ public class PracticeSessionService {
     private final AnswerProcessingService answerProcessingService;
     private final StreakService streakService;
     private final AchievementService achievementService;
+    private final XpService xpService;
     private final StrapiContentCache strapiContentCache;
     private final StudyPlanRepository planRepository;
     private final StudyPlanDayRepository planDayRepository;
@@ -100,6 +102,7 @@ public class PracticeSessionService {
      * @param answerProcessingService  answer grading + mastery update
      * @param streakService            streak management
      * @param achievementService       achievement checking
+     * @param xpService                XP grant service
      * @param strapiContentCache       Strapi content cache
      * @param planRepository           study plan repository for progress sync
      * @param planDayRepository        study plan day repository for progress sync
@@ -114,6 +117,7 @@ public class PracticeSessionService {
                                   AnswerProcessingService answerProcessingService,
                                   StreakService streakService,
                                   AchievementService achievementService,
+                                  XpService xpService,
                                   StrapiContentCache strapiContentCache,
                                   StudyPlanRepository planRepository,
                                   StudyPlanDayRepository planDayRepository,
@@ -127,6 +131,7 @@ public class PracticeSessionService {
         this.answerProcessingService = answerProcessingService;
         this.streakService = streakService;
         this.achievementService = achievementService;
+        this.xpService = xpService;
         this.strapiContentCache = strapiContentCache;
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;
@@ -356,9 +361,14 @@ public class PracticeSessionService {
         // Update streak
         streakService.updateStreak(userId, session.getProductCode());
 
-        // Check achievements async
+        // Check achievements
         List<EarnedAchievementDto> newAchievements = achievementService
                 .checkAchievements(userId, session.getProductCode());
+
+        // Grant per-answer XP
+        int answerXp = isCorrect ? XpService.XP_CORRECT_ANSWER : XpService.XP_WRONG_ANSWER;
+        int achievementXp = newAchievements.stream().mapToInt(EarnedAchievementDto::xpReward).sum();
+        xpService.grantXp(userId, session.getProductCode(), answerXp + achievementXp);
 
         // Build explanation
         AnswerResultDto.ExplanationDto explanation = null;
@@ -639,13 +649,16 @@ public class PracticeSessionService {
         List<EarnedAchievementDto> achievements = achievementService
                 .checkAchievements(userId, session.getProductCode());
 
+        // Grant session completion XP bonus
+        XpResult xpResult = xpService.grantXp(userId, session.getProductCode(), XpService.XP_PRACTICE_COMPLETE);
+
         // Compute actual mastery changes from session answers
         List<SessionAnswer> sessionAnswers = answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId);
         SessionSummaryDto.MasteryChangesDto masteryChanges = computeMasteryChanges(sessionAnswers);
 
-        LOG.info("Session completed: id={}, user={}, correct={}/{}, accuracy={}%, timeSpentSec={}",
+        LOG.info("Session completed: id={}, user={}, correct={}/{}, accuracy={}%, timeSpentSec={}, xp={}",
                 sessionId, userId, session.getCorrectCount(), session.getTotalQuestions(),
-                session.getAccuracyPercent(), session.getTimeSpentSeconds());
+                session.getAccuracyPercent(), session.getTimeSpentSeconds(), XpService.XP_PRACTICE_COMPLETE);
         AUDIT.info("SESSION_COMPLETED sessionId={} userId={} correct={} total={} accuracyPct={} timeSpentSec={}",
                 sessionId, userId, session.getCorrectCount(), session.getTotalQuestions(),
                 session.getAccuracyPercent(), session.getTimeSpentSeconds());
@@ -659,7 +672,9 @@ public class PracticeSessionService {
                 session.getTimeSpentSeconds(),
                 masteryChanges,
                 new SessionSummaryDto.StreakUpdateDto(streak.currentStreak(), streak.isNewDay()),
-                achievements
+                achievements,
+                new SessionSummaryDto.XpUpdateDto(XpService.XP_PRACTICE_COMPLETE, xpResult.totalXp(),
+                        xpResult.currentLevel(), xpResult.xpForNextLevel(), xpResult.leveledUp())
         );
     }
 

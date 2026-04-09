@@ -9,6 +9,8 @@ import com.passtheo.content.domain.enums.ExamType;
 import com.passtheo.shared.outbox.entity.OutboxStatus;
 import com.passtheo.content.dto.request.StartExamRequest;
 import com.passtheo.content.dto.request.SubmitExamRequest;
+import com.passtheo.content.domain.valueobject.StreakResult;
+import com.passtheo.content.domain.valueobject.XpResult;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.ExamDto;
@@ -16,6 +18,7 @@ import com.passtheo.content.dto.response.ExamHistorySummaryDto;
 import com.passtheo.content.dto.response.ExamResultDto;
 import com.passtheo.content.dto.response.QuestionDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.repository.ExamAnswerRepository;
@@ -64,6 +67,8 @@ public class MockExamService {
     private final AnswerProcessingService answerProcessingService;
     private final AchievementService achievementService;
     private final ReadinessService readinessService;
+    private final StreakService streakService;
+    private final XpService xpService;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
@@ -76,6 +81,8 @@ public class MockExamService {
      * @param answerProcessingService answer grading
      * @param achievementService     achievement checking
      * @param readinessService       readiness score calculator
+     * @param streakService          streak update service
+     * @param xpService              XP grant service
      * @param outboxEventRepository  outbox event repository
      * @param objectMapper           JSON serializer
      */
@@ -85,6 +92,8 @@ public class MockExamService {
                            AnswerProcessingService answerProcessingService,
                            AchievementService achievementService,
                            ReadinessService readinessService,
+                           StreakService streakService,
+                           XpService xpService,
                            OutboxEventRepository outboxEventRepository,
                            ObjectMapper objectMapper) {
         this.examAttemptRepository = examAttemptRepository;
@@ -93,6 +102,8 @@ public class MockExamService {
         this.answerProcessingService = answerProcessingService;
         this.achievementService = achievementService;
         this.readinessService = readinessService;
+        this.streakService = streakService;
+        this.xpService = xpService;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
     }
@@ -209,6 +220,7 @@ public class MockExamService {
 
         // Grade all answers
         int correctCount = 0;
+        int answerXp = 0;
         Map<String, int[]> domainStats = new LinkedHashMap<>(); // domainCode -> [correct, total]
         List<ExamResultDto.WrongAnswerDto> wrongAnswers = new ArrayList<>();
 
@@ -238,6 +250,7 @@ public class MockExamService {
 
                 domainStats.computeIfAbsent("unknown", k -> new int[]{0, 0});
                 domainStats.get("unknown")[1]++;
+                answerXp += XpService.XP_WRONG_ANSWER;
 
                 // Add to wrong answers so the user can see why they lost a point
                 wrongAnswers.add(new ExamResultDto.WrongAnswerDto(
@@ -250,6 +263,7 @@ public class MockExamService {
             if (isCorrect) {
                 correctCount++;
             }
+            answerXp += isCorrect ? XpService.XP_CORRECT_ANSWER : XpService.XP_WRONG_ANSWER;
 
             String domainCode = question.domain() != null ? question.domain().code() : "unknown";
             domainStats.computeIfAbsent(domainCode, k -> new int[]{0, 0});
@@ -303,10 +317,14 @@ public class MockExamService {
         attempt.setDomainBreakdown(serializeJson(domainStats));
         examAttemptRepository.save(attempt);
 
-        // Build domain breakdown DTOs
+        // Build domain breakdown DTOs with human-readable names
+        Map<String, String> domainNameMap = strapiContentCache.getDomains(attempt.getProductCode(), locale)
+                .stream()
+                .collect(Collectors.toMap(StrapiDomainDto::code, StrapiDomainDto::name, (a, b) -> a));
+
         List<ExamResultDto.DomainBreakdownDto> domainBreakdown = domainStats.entrySet().stream()
                 .map(e -> new ExamResultDto.DomainBreakdownDto(
-                        e.getKey(), e.getKey(),
+                        e.getKey(), domainNameMap.getOrDefault(e.getKey(), e.getKey()),
                         e.getValue()[0], e.getValue()[1],
                         e.getValue()[1] > 0 ? (double) e.getValue()[0] / e.getValue()[1] * 100.0 : 0.0))
                 .toList();
@@ -319,6 +337,18 @@ public class MockExamService {
         List<EarnedAchievementDto> achievements = achievementService
                 .checkAchievements(userId, attempt.getProductCode());
 
+        // Update study streak
+        StreakResult streakResult = streakService.updateStreak(userId, attempt.getProductCode());
+
+        // Calculate and grant XP
+        int examBonus = passed ? XpService.XP_EXAM_PASS : XpService.XP_EXAM_FAIL;
+        if (passed && correctCount == totalQuestions) {
+            examBonus += XpService.XP_PERFECT_EXAM;
+        }
+        int achievementXp = achievements.stream().mapToInt(EarnedAchievementDto::xpReward).sum();
+        int totalXpEarned = answerXp + examBonus + achievementXp;
+        XpResult xpResult = xpService.grantXp(userId, attempt.getProductCode(), totalXpEarned);
+
         // Publish exam.completed outbox event
         List<String> weakDomains = domainStats.entrySet().stream()
                 .filter(e -> e.getValue()[1] > 0 && (double) e.getValue()[0] / e.getValue()[1] < 0.6)
@@ -327,13 +357,16 @@ public class MockExamService {
         publishExamCompletedEvent(TenantContext.get(), userId, examId,
                 attempt.getProductCode(), passed, correctCount, totalQuestions, scorePercent, weakDomains);
 
-        LOG.info("Mock exam submitted: id={}, user={}, correct={}/{}, passed={}",
-                examId, userId, correctCount, totalQuestions, passed);
+        LOG.info("Mock exam submitted: id={}, user={}, correct={}/{}, passed={}, xp={}",
+                examId, userId, correctCount, totalQuestions, passed, totalXpEarned);
 
         return new ExamResultDto(
                 examId, passed, correctCount, totalQuestions,
                 attempt.getPassScore(), scorePercent, timeTakenSeconds,
-                domainBreakdown, wrongAnswers, readinessUpdate, achievements
+                domainBreakdown, wrongAnswers, readinessUpdate, achievements,
+                new ExamResultDto.StreakUpdateDto(streakResult.currentStreak(), streakResult.isNewDay()),
+                new ExamResultDto.XpUpdateDto(totalXpEarned, xpResult.totalXp(),
+                        xpResult.currentLevel(), xpResult.xpForNextLevel(), xpResult.leveledUp())
         );
     }
 
