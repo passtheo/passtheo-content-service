@@ -2,9 +2,10 @@ package com.passtheo.content.unit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
-import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
+import com.passtheo.content.integration.subscription.SubscriptionClient;
 import com.passtheo.content.service.EntitlementChecker;
+import com.passtheo.shared.core.dto.AccessGrant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +28,7 @@ class EntitlementCheckerTest {
     @Mock private RedisTemplate<String, String> redisTemplate;
     @Mock private ValueOperations<String, String> valueOps;
     @Mock private StrapiContentCache strapiContentCache;
+    @Mock private SubscriptionClient subscriptionClient;
 
     private EntitlementChecker entitlementChecker;
 
@@ -37,7 +39,7 @@ class EntitlementCheckerTest {
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        entitlementChecker = new EntitlementChecker(redisTemplate, new ObjectMapper(), strapiContentCache);
+        entitlementChecker = new EntitlementChecker(redisTemplate, new ObjectMapper(), strapiContentCache, subscriptionClient);
     }
 
     @Test

@@ -32,6 +32,28 @@ public class SubscriptionClient {
     }
 
     /**
+     * Fetches the access grant from subscription-service's internal endpoint.
+     * Called by {@link com.passtheo.content.service.EntitlementChecker} on cache miss.
+     *
+     * @param tenantId the tenant ID
+     * @param userId   the user's Keycloak ID
+     * @return the raw JSON access grant string, or null on failure
+     */
+    public String fetchAccessGrant(@Nonnull UUID tenantId, @Nonnull UUID userId) {
+        try {
+            return webClient.get()
+                    .uri("/internal/subscriptions/access/{userId}", userId)
+                    .header("X-Tenant-ID", tenantId.toString())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (Exception e) {
+            LOG.error("Failed to fetch access grant for user {}: {}", userId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Increments the daily question usage counter for a user.
      * Returns false when the 429 rate-limit response is received (daily limit reached).
      *
