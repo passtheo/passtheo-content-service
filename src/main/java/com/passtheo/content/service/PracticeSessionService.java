@@ -624,6 +624,9 @@ public class PracticeSessionService {
         StudySession session = sessionRepository.findByIdAndKeycloakUserId(sessionId, userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Session not found: " + sessionId));
 
+        // Auto-skip unanswered questions so they appear in the breakdown
+        autoSkipUnansweredQuestions(userId, session);
+
         session.setStatus(SessionStatus.COMPLETED);
         session.setCompletedAt(Instant.now());
         if (session.getAnsweredCount() > 0) {
@@ -896,6 +899,73 @@ public class PracticeSessionService {
                 TenantContext.get(), userId, strapiQuestionId, request.reportType(), request.comment());
         questionReportRepository.save(report);
         LOG.info("Question reported: user={}, question={}, type={}", userId, strapiQuestionId, request.reportType());
+    }
+
+    /**
+     * Creates skip records for all unanswered questions in a session.
+     * Called during completeSession() so the breakdown shows every question.
+     * Does NOT affect mastery — skips are neutral for spaced repetition.
+     */
+    private void autoSkipUnansweredQuestions(@Nonnull UUID userId, @Nonnull StudySession session) {
+        List<String> allQuestionIds = session.getQuestionIdList();
+        if (allQuestionIds.isEmpty()) {
+            return; // Legacy session without stored question IDs
+        }
+
+        Set<String> answeredIds = answerRepository.findBySessionIdOrderByQuestionOrderAsc(session.getId())
+                .stream()
+                .map(SessionAnswer::getStrapiQuestionId)
+                .collect(Collectors.toSet());
+
+        String locale = session.getLocale();
+        List<SessionAnswer> skipAnswers = new ArrayList<>();
+
+        for (int i = 0; i < allQuestionIds.size(); i++) {
+            String questionId = allQuestionIds.get(i);
+            if (answeredIds.contains(questionId)) {
+                continue;
+            }
+
+            StrapiQuestionDto question = strapiContentCache.getQuestion(questionId, locale);
+            if (question == null) {
+                continue; // Deleted/deactivated in Strapi
+            }
+
+            int questionOrder = i + 1; // 1-indexed position in the full list
+
+            // Look up current mastery level (unchanged since skip doesn't affect it)
+            QuestionProgress progress = progressRepository
+                    .findByKeycloakUserIdAndStrapiQuestionId(userId, questionId)
+                    .orElse(null);
+            String masteryLevel = progress != null ? progress.getMasteryLevel().name() : MasteryLevel.NEW.name();
+
+            SessionAnswer skipAnswer = new SessionAnswer(
+                    session.getId(), userId, questionId,
+                    question.version(), question.interactionType(), false,
+                    SKIP_ANSWER_JSON, serializeJson(answerProcessingService.buildCorrectAnswer(question)),
+                    0, questionOrder);
+            skipAnswer.setTenantId(TenantContext.get());
+            skipAnswer.setQuestionSnapshot(serializeJson(answerProcessingService.buildQuestionSnapshot(question)));
+            skipAnswer.setPreviousMasteryLevel(masteryLevel);
+            skipAnswer.setNewMasteryLevel(masteryLevel);
+
+            String domainCode = resolveDomainCode(question, session.getProductCode(), locale);
+            skipAnswer.setDomainCode(domainCode);
+            String domainName = question.domain() != null ? question.domain().name() : null;
+            if (domainName == null && domainCode != null) {
+                domainName = resolveDomainName(domainCode, session.getProductCode(), locale);
+            }
+            skipAnswer.setDomainName(domainName);
+
+            skipAnswers.add(skipAnswer);
+        }
+
+        if (!skipAnswers.isEmpty()) {
+            answerRepository.saveAll(skipAnswers);
+            session.setAnsweredCount(session.getAnsweredCount() + skipAnswers.size());
+            sessionRepository.save(session);
+            LOG.info("Auto-skipped {} unanswered questions for session={}", skipAnswers.size(), session.getId());
+        }
     }
 
     /**
