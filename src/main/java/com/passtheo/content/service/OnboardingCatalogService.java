@@ -104,7 +104,7 @@ public class OnboardingCatalogService {
     }
 
     private CatalogProductDto toProductDto(StrapiProductDto product) {
-        StrapiExamConfigDto strapiExamConfig = strapiContentCache.getExamConfig(product.code());
+        StrapiExamConfigDto strapiExamConfig = strapiContentCache.getExamConfig(product.code(), DEFAULT_LOCALE);
         CatalogExamConfigDto examConfig = null;
         if (strapiExamConfig != null) {
             examConfig = new CatalogExamConfigDto(

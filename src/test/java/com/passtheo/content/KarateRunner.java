@@ -170,8 +170,8 @@ class KarateRunner {
                     String documentId = questionId.startsWith("doc-") ? questionId : "doc-" + questionId;
                     return buildSingleQuestion(questionId, documentId, "verkeersborden");
                 });
-        when(strapiClient.getExamConfig(anyString()))
-                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(strapiClient.getExamConfig(anyString(), anyString()))
+                .thenReturn(new StrapiExamConfigDto(0, null, "Theory Exam", "Test description", List.of("Rule 1"), 50, 30, 44, null, null, true, false, null, null, false));
         when(strapiClient.getAchievements(anyString()))
                 .thenReturn(buildAchievements());
         when(strapiClient.getRoadSigns(anyString(), anyString(), any()))
@@ -196,7 +196,7 @@ class KarateRunner {
         return List.of(new StrapiProductDto(
                 1, null, "Auto B", "auto-b", "B", "Auto rijbewijs theorie",
                 null, null, true, false, 1,
-                new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false),
+                new StrapiExamConfigDto(0, null, "Theory Exam", "Test description", List.of("Rule 1"), 50, 30, 44, null, null, true, false, null, null, false),
                 8, 500));
     }
 

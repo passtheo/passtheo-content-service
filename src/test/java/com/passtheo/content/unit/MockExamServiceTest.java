@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.passtheo.content.domain.entity.ExamAttempt;
 import com.passtheo.content.domain.enums.ExamType;
 import com.passtheo.content.dto.request.SubmitExamRequest;
+import com.passtheo.content.dto.response.ExamConfigPreviewDto;
 import com.passtheo.content.dto.response.ExamResultDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
@@ -40,7 +41,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
+import com.passtheo.shared.core.exception.AppException;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -155,6 +160,34 @@ class MockExamServiceTest {
                 new StrapiRelationDto(0, null, domainCode, null),
                 new StrapiRelationDto(0, null, "topic", null),
                 null);
+    }
+
+    @Test
+    void getExamConfigPreview_returnsPreviewFromCache() {
+        StrapiExamConfigDto config = new StrapiExamConfigDto(
+                1, "doc1", "Theory Exam", "Simulate the real exam.", List.of("Rule 1", "Rule 2"),
+                50, 30, 44, 45, null, true, false,
+                List.of(), Map.of("easy", 0.2, "medium", 0.5, "hard", 0.3), false
+        );
+        when(strapiContentCache.getExamConfig(PRODUCT_CODE, "en")).thenReturn(config);
+
+        ExamConfigPreviewDto preview = service.getExamConfigPreview(PRODUCT_CODE, "en");
+
+        assertThat(preview.title()).isEqualTo("Theory Exam");
+        assertThat(preview.description()).isEqualTo("Simulate the real exam.");
+        assertThat(preview.totalQuestions()).isEqualTo(50);
+        assertThat(preview.timeLimitMinutes()).isEqualTo(30);
+        assertThat(preview.passScore()).isEqualTo(44);
+        assertThat(preview.rules()).containsExactly("Rule 1", "Rule 2");
+    }
+
+    @Test
+    void getExamConfigPreview_notFound_throwsAppException() {
+        when(strapiContentCache.getExamConfig(PRODUCT_CODE, "en")).thenReturn(null);
+
+        assertThatThrownBy(() -> service.getExamConfigPreview(PRODUCT_CODE, "en"))
+                .isInstanceOf(AppException.class)
+                .hasMessageContaining("Exam config not found");
     }
 
     private ReadinessScore buildMinimalReadiness() {
