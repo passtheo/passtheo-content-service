@@ -18,7 +18,9 @@ public record ExamResultDto(
     List<DomainBreakdownDto> domainBreakdown,
     List<WrongAnswerDto> wrongAnswers,
     ReadinessUpdateDto readinessUpdate,
-    List<EarnedAchievementDto> newAchievements
+    List<EarnedAchievementDto> newAchievements,
+    StreakUpdateDto streakUpdate,
+    XpUpdateDto xpUpdate
 ) {
     /**
      * Per-domain exam breakdown.
@@ -50,4 +52,5 @@ public record ExamResultDto(
         double newScore,
         String label
     ) {}
+
 }

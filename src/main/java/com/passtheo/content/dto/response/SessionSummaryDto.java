@@ -15,7 +15,8 @@ public record SessionSummaryDto(
     int timeSpentSeconds,
     MasteryChangesDto masteryChanges,
     StreakUpdateDto streakUpdate,
-    List<EarnedAchievementDto> newAchievements
+    List<EarnedAchievementDto> newAchievements,
+    XpUpdateDto xpUpdate
 ) {
     /**
      * Summary of mastery level changes during the session.
@@ -26,11 +27,4 @@ public record SessionSummaryDto(
         int unchanged
     ) {}
 
-    /**
-     * Streak update from this session.
-     */
-    public record StreakUpdateDto(
-        int currentStreak,
-        boolean isNewDay
-    ) {}
 }

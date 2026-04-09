@@ -10,10 +10,15 @@ import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.integration.strapi.dto.StrapiRelationDto;
 import com.passtheo.content.repository.ExamAnswerRepository;
 import com.passtheo.content.repository.ExamAttemptRepository;
+import com.passtheo.content.domain.valueobject.StreakResult;
+import com.passtheo.content.domain.valueobject.XpResult;
+import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.service.AchievementService;
 import com.passtheo.content.service.AnswerProcessingService;
 import com.passtheo.content.service.MockExamService;
 import com.passtheo.content.service.ReadinessService;
+import com.passtheo.content.service.StreakService;
+import com.passtheo.content.service.XpService;
 import com.passtheo.content.domain.enums.ReadinessLabel;
 import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
@@ -37,6 +42,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +58,8 @@ class MockExamServiceTest {
     @Mock private AnswerProcessingService answerProcessingService;
     @Mock private AchievementService achievementService;
     @Mock private ReadinessService readinessService;
+    @Mock private StreakService streakService;
+    @Mock private XpService xpService;
     @Mock private OutboxEventRepository outboxEventRepository;
 
     private MockExamService service;
@@ -67,6 +75,7 @@ class MockExamServiceTest {
         service = new MockExamService(
                 examAttemptRepository, examAnswerRepository, strapiContentCache,
                 answerProcessingService, achievementService, readinessService,
+                streakService, xpService,
                 outboxEventRepository, new ObjectMapper()
         );
     }
@@ -94,6 +103,12 @@ class MockExamServiceTest {
         when(readinessService.calculate(eq(USER_ID), eq(PRODUCT_CODE), eq("nl")))
                 .thenReturn(buildMinimalReadiness());
         when(achievementService.checkAchievements(USER_ID, PRODUCT_CODE)).thenReturn(List.of());
+        when(streakService.updateStreak(USER_ID, PRODUCT_CODE))
+                .thenReturn(new StreakResult(1, 1, 1, null, 0, 0, true, false, true));
+        when(xpService.grantXp(eq(USER_ID), eq(PRODUCT_CODE), anyInt()))
+                .thenReturn(new XpResult(14, 14, 1, 100, false, 1));
+        when(strapiContentCache.getDomains(PRODUCT_CODE, "nl"))
+                .thenReturn(List.of(new StrapiDomainDto(1, "d1", "Voorrang", "voorrang", null, null, null, null, null, true, false, 1)));
 
         SubmitExamRequest request = new SubmitExamRequest(List.of(
                 new SubmitExamRequest.ExamAnswerItem("q1", Map.of("selectedOptionId", "1"), 5000),

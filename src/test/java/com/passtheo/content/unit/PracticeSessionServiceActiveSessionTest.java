@@ -20,6 +20,7 @@ import com.passtheo.content.service.AnswerProcessingService;
 import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.content.service.QuestionSelectionService;
 import com.passtheo.content.service.StreakService;
+import com.passtheo.content.service.XpService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +47,7 @@ class PracticeSessionServiceActiveSessionTest {
     @Mock private AnswerProcessingService answerProcessingService;
     @Mock private StreakService streakService;
     @Mock private AchievementService achievementService;
+    @Mock private XpService xpService;
     @Mock private StrapiContentCache strapiContentCache;
     @Mock private StudyPlanRepository planRepository;
     @Mock private StudyPlanDayRepository planDayRepository;
@@ -62,7 +64,7 @@ class PracticeSessionServiceActiveSessionTest {
         service = new PracticeSessionService(
                 sessionRepository, answerRepository, progressRepository,
                 questionSelectionService, answerProcessingService, streakService,
-                achievementService, strapiContentCache, planRepository, planDayRepository,
+                achievementService, xpService, strapiContentCache, planRepository, planDayRepository,
                 questionReportRepository, outboxEventRepository, new ObjectMapper()
         );
     }

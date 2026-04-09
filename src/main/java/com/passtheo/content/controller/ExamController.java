@@ -5,6 +5,7 @@ import com.passtheo.content.dto.request.SubmitExamRequest;
 import com.passtheo.content.dto.response.ExamDto;
 import com.passtheo.content.dto.response.ExamHistorySummaryDto;
 import com.passtheo.content.dto.response.ExamResultDto;
+import com.passtheo.content.dto.response.SessionBreakdownDto;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.MockExamService;
 import com.passtheo.shared.core.dto.ApiResponse;
@@ -100,6 +101,24 @@ public class ExamController {
 
         ExamResultDto result = mockExamService.submitExam(userId, examId, request, locale);
         return ResponseEntity.ok(ApiResponse.success(result, MDC.get("traceId")));
+    }
+
+    /**
+     * Gets full exam breakdown for question-by-question review.
+     *
+     * @param examId  the exam attempt ID
+     * @param userId  user ID from header
+     * @param locale  content locale
+     * @return exam breakdown with all questions
+     */
+    @GetMapping("/mock/{examId}/breakdown")
+    public ResponseEntity<ApiResponse<SessionBreakdownDto>> getExamBreakdown(
+            @PathVariable @Nonnull UUID examId,
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @RequestParam(defaultValue = "nl") @Nonnull String locale) {
+
+        SessionBreakdownDto breakdown = mockExamService.getExamBreakdown(userId, examId, locale);
+        return ResponseEntity.ok(ApiResponse.success(breakdown, MDC.get("traceId")));
     }
 
     /**
