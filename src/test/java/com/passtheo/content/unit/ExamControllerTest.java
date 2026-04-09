@@ -1,6 +1,6 @@
 package com.passtheo.content.unit;
 
-import com.passtheo.content.domain.valueobject.AccessGrant;
+import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.dto.request.StartExamRequest;
 import com.passtheo.content.dto.response.ExamDto;
 import com.passtheo.content.service.EntitlementChecker;

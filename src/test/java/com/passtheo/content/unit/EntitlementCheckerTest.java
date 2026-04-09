@@ -1,8 +1,8 @@
 package com.passtheo.content.unit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.service.EntitlementChecker;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +43,7 @@ class EntitlementCheckerTest {
     @Test
     void paid_user_cache_hit_grants_exam_access() {
         when(valueOps.get("access:" + TENANT_ID + ":" + PAID_USER))
-                .thenReturn("{\"paid\":true,\"planCode\":\"MONTH_1\",\"allowedDomains\":null}");
+                .thenReturn("{\"hasAccess\":true,\"planCode\":\"MONTH_1\"}");
 
         assertTrue(entitlementChecker.canStartExam(TENANT_ID, PAID_USER));
     }
@@ -58,7 +58,7 @@ class EntitlementCheckerTest {
     @Test
     void paid_user_can_start_session_any_domain() {
         when(valueOps.get("access:" + TENANT_ID + ":" + PAID_USER))
-                .thenReturn("{\"paid\":true,\"planCode\":\"MONTH_1\",\"allowedDomains\":null}");
+                .thenReturn("{\"hasAccess\":true,\"planCode\":\"MONTH_1\"}");
 
         assertTrue(entitlementChecker.canStartSession(TENANT_ID, PAID_USER, "verkeersborden", "nl"));
         assertTrue(entitlementChecker.canStartSession(TENANT_ID, PAID_USER, null, "nl"));
@@ -123,7 +123,7 @@ class EntitlementCheckerTest {
     @Test
     void get_access_returns_paid_grant_on_cache_hit() {
         when(valueOps.get("access:" + TENANT_ID + ":" + PAID_USER))
-                .thenReturn("{\"paid\":true,\"planCode\":\"YEAR_1\",\"allowedDomains\":null}");
+                .thenReturn("{\"hasAccess\":true,\"planCode\":\"YEAR_1\"}");
 
         AccessGrant grant = entitlementChecker.getAccess(TENANT_ID, PAID_USER);
 

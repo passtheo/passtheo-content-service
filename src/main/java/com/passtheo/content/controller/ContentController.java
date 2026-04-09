@@ -1,7 +1,7 @@
 package com.passtheo.content.controller;
 
 import com.passtheo.content.domain.enums.DomainStrength;
-import com.passtheo.content.domain.valueobject.AccessGrant;
+import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.dto.request.QuestionReportRequest;
 import com.passtheo.content.dto.response.CountryDto;
 import com.passtheo.content.dto.response.DomainWithProgressDto;

@@ -97,6 +97,8 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] [%X{tenantId:-}] %-5level %logger{36} - %msg%n"
 
 passtheo:
+  access-cache:
+    redis-database: ${ACCESS_CACHE_REDIS_DATABASE:2}
   datasource:
     tenant-variable: app.tenant_id
   logging:

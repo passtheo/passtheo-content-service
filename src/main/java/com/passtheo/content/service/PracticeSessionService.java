@@ -17,7 +17,7 @@ import com.passtheo.content.dto.request.StartSessionRequest;
 import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
-import com.passtheo.content.domain.valueobject.AccessGrant;
+import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.DomainSummaryDto;
 import com.passtheo.content.domain.entity.QuestionReport;
