@@ -2,12 +2,13 @@ package com.passtheo.content.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.passtheo.content.domain.valueobject.AccessGrant;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
+import com.passtheo.shared.core.dto.AccessGrant;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -31,11 +32,11 @@ public class EntitlementChecker {
     /**
      * Constructs the entitlement checker.
      *
-     * @param redisTemplate      the Redis template
+     * @param redisTemplate      the access cache Redis template (DB 2)
      * @param objectMapper       the JSON object mapper
      * @param strapiContentCache the Strapi content cache
      */
-    public EntitlementChecker(RedisTemplate<String, String> redisTemplate,
+    public EntitlementChecker(@Qualifier("accessCacheRedisTemplate") RedisTemplate<String, String> redisTemplate,
                               ObjectMapper objectMapper,
                               StrapiContentCache strapiContentCache) {
         this.redisTemplate = redisTemplate;

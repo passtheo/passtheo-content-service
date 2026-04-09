@@ -1,6 +1,6 @@
 package com.passtheo.content.controller;
 
-import com.passtheo.content.domain.valueobject.AccessGrant;
+import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.dto.response.DomainSummaryDto;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.PracticeSessionService;
