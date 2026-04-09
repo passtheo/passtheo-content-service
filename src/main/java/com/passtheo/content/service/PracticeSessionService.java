@@ -906,7 +906,7 @@ public class PracticeSessionService {
      * Called during completeSession() so the breakdown shows every question.
      * Does NOT affect mastery — skips are neutral for spaced repetition.
      */
-    private void autoSkipUnansweredQuestions(UUID userId, StudySession session) {
+    private void autoSkipUnansweredQuestions(@Nonnull UUID userId, @Nonnull StudySession session) {
         List<String> allQuestionIds = session.getQuestionIdList();
         if (allQuestionIds.isEmpty()) {
             return; // Legacy session without stored question IDs
@@ -918,7 +918,7 @@ public class PracticeSessionService {
                 .collect(Collectors.toSet());
 
         String locale = session.getLocale();
-        int autoSkipped = 0;
+        List<SessionAnswer> skipAnswers = new ArrayList<>();
 
         for (int i = 0; i < allQuestionIds.size(); i++) {
             String questionId = allQuestionIds.get(i);
@@ -957,14 +957,14 @@ public class PracticeSessionService {
             }
             skipAnswer.setDomainName(domainName);
 
-            answerRepository.save(skipAnswer);
-            autoSkipped++;
+            skipAnswers.add(skipAnswer);
         }
 
-        if (autoSkipped > 0) {
-            session.setAnsweredCount(session.getAnsweredCount() + autoSkipped);
+        if (!skipAnswers.isEmpty()) {
+            answerRepository.saveAll(skipAnswers);
+            session.setAnsweredCount(session.getAnsweredCount() + skipAnswers.size());
             sessionRepository.save(session);
-            LOG.info("Auto-skipped {} unanswered questions for session={}", autoSkipped, session.getId());
+            LOG.info("Auto-skipped {} unanswered questions for session={}", skipAnswers.size(), session.getId());
         }
     }
 
