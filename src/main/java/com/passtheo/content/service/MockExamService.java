@@ -14,9 +14,12 @@ import com.passtheo.content.domain.valueobject.XpResult;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.ExamDto;
+import com.passtheo.content.dto.response.BreakdownQuestionDto;
 import com.passtheo.content.dto.response.ExamHistorySummaryDto;
 import com.passtheo.content.dto.response.ExamResultDto;
 import com.passtheo.content.dto.response.QuestionDto;
+import com.passtheo.content.dto.response.SessionBreakdownDto;
+import com.passtheo.content.dto.response.SessionSummaryDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.integration.strapi.dto.StrapiExamConfigDto;
@@ -393,6 +396,69 @@ public class MockExamService {
                 .toList();
     }
 
+    /**
+     * Gets full exam breakdown for question-by-question review.
+     * Loads each question from Strapi cache to build snapshots.
+     *
+     * @param userId the user's Keycloak ID
+     * @param examId the exam attempt ID
+     * @param locale the content locale
+     * @return the exam breakdown in the same format as practice breakdowns
+     */
+    @Transactional(readOnly = true)
+    public SessionBreakdownDto getExamBreakdown(@Nonnull UUID userId, @Nonnull UUID examId,
+                                                 @Nonnull String locale) {
+        ExamAttempt attempt = examAttemptRepository.findByIdAndKeycloakUserId(examId, userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                        "Exam attempt not found: " + examId));
+
+        List<ExamAnswer> answers = examAnswerRepository.findByExamAttemptIdOrderByQuestionOrderAsc(examId);
+
+        Map<String, String> domainNameMap = strapiContentCache.getDomains(attempt.getProductCode(), locale)
+                .stream()
+                .collect(Collectors.toMap(StrapiDomainDto::code, StrapiDomainDto::name, (a, b) -> a));
+
+        List<BreakdownQuestionDto> breakdownQuestions = new ArrayList<>();
+        for (ExamAnswer ea : answers) {
+            StrapiQuestionDto question = strapiContentCache.getQuestion(ea.getStrapiQuestionId(), locale);
+
+            Map<String, Object> snapshot = Map.of();
+            String interactionType = "multiple_choice";
+            if (question != null) {
+                snapshot = answerProcessingService.buildQuestionSnapshot(question);
+                interactionType = question.interactionType();
+            }
+
+            breakdownQuestions.add(new BreakdownQuestionDto(
+                    ea.getQuestionOrder(),
+                    ea.getStrapiQuestionId(),
+                    interactionType,
+                    ea.isCorrect(),
+                    false, // exams have no skipped questions
+                    deserializeJson(ea.getUserAnswer()),
+                    deserializeJson(ea.getCorrectAnswer()),
+                    snapshot,
+                    ea.getDomainCode(),
+                    domainNameMap.getOrDefault(ea.getDomainCode(), ea.getDomainCode()),
+                    "", // exams don't track mastery
+                    "",
+                    false
+            ));
+        }
+
+        return new SessionBreakdownDto(
+                attempt.getId(),
+                "COMPLETED",
+                attempt.getTotalQuestions(),
+                attempt.getCorrectCount(),
+                0, // no skipped in exams
+                attempt.getScorePercent() != null ? attempt.getScorePercent().doubleValue() : 0.0,
+                attempt.getTimeTakenSeconds(),
+                new SessionSummaryDto.MasteryChangesDto(0, 0, 0),
+                List.copyOf(breakdownQuestions)
+        );
+    }
+
     private void publishExamCompletedEvent(java.util.UUID tenantId, java.util.UUID userId,
                                             java.util.UUID examAttemptId, String productCode,
                                             boolean passed, int correctCount, int totalQuestions,
@@ -501,6 +567,19 @@ public class MockExamService {
         } catch (JsonProcessingException e) {
             LOG.error("Failed to serialize JSON: {}", e.getMessage());
             return "{}";
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> deserializeJson(String json) {
+        if (json == null || json.isBlank() || "null".equals(json)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (JsonProcessingException e) {
+            LOG.warn("Failed to deserialize JSON for breakdown: {}", e.getMessage());
+            return Map.of();
         }
     }
 }
