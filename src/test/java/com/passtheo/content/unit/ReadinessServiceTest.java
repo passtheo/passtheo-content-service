@@ -195,8 +195,8 @@ class ReadinessServiceTest {
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(22);
         when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(30);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
-        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
-                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE), eq("nl")))
+                .thenReturn(new StrapiExamConfigDto(0, null, null, null, null, 50, 30, 44, null, null, true, false, null, null, false));
         when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
         when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
         when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
@@ -221,8 +221,8 @@ class ReadinessServiceTest {
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(20);
         when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(30);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
-        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
-                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE), eq("nl")))
+                .thenReturn(new StrapiExamConfigDto(0, null, null, null, null, 50, 30, 44, null, null, true, false, null, null, false));
         when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(List.of());
         when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());
         when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
@@ -488,8 +488,8 @@ class ReadinessServiceTest {
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(20);
         when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(30);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
-        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
-                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, 44, null, null, true, false, null, null, false));
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE), eq("nl")))
+                .thenReturn(new StrapiExamConfigDto(0, null, null, null, null, 50, 30, 44, null, null, true, false, null, null, false));
         when(userServiceClient.getProfile(any(), any())).thenReturn(Optional.empty());
         when(examAttemptRepository.findAverageScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(null);
         when(examAttemptRepository.findByKeycloakUserIdAndProductCodeOrderByCompletedAtDesc(
@@ -540,8 +540,8 @@ class ReadinessServiceTest {
         when(progressRepository.countCorrect(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(correct);
         when(progressRepository.countTotalAttempts(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(attempted);
         when(examAttemptRepository.findBestScore(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(bestExam);
-        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE)))
-                .thenReturn(new StrapiExamConfigDto(0, null, 50, 30, passScore, null, null, true, false, null, null, false));
+        when(strapiContentCache.getExamConfig(eq(PRODUCT_CODE), eq("nl")))
+                .thenReturn(new StrapiExamConfigDto(0, null, null, null, null, 50, 30, passScore, null, null, true, false, null, null, false));
         when(progressRepository.aggregateByDomain(eq(USER_ID), eq(PRODUCT_CODE))).thenReturn(List.of());
         when(strapiContentCache.getDomains(eq(PRODUCT_CODE), eq(LOCALE))).thenReturn(List.of());
         // Exam confidence mocks (lenient because individual tests may override)

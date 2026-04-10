@@ -267,10 +267,11 @@ public class StrapiContentCache {
      * Gets exam config for a product with caching.
      *
      * @param productCode the product code
+     * @param locale      the content locale
      * @return the exam config
      */
-    public StrapiExamConfigDto getExamConfig(@Nonnull String productCode) {
-        String cacheKey = CACHE_PREFIX + "examConfig:" + productCode;
+    public StrapiExamConfigDto getExamConfig(@Nonnull String productCode, @Nonnull String locale) {
+        String cacheKey = CACHE_PREFIX + "examConfig:" + productCode + ":" + locale;
         String cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
             try {
@@ -280,7 +281,7 @@ public class StrapiContentCache {
             }
         }
 
-        StrapiExamConfigDto config = strapiClient.getExamConfig(productCode);
+        StrapiExamConfigDto config = strapiClient.getExamConfig(productCode, locale);
         if (config != null) {
             cacheValue(cacheKey, config);
         }

@@ -12,6 +12,9 @@ import java.util.Map;
 public record StrapiExamConfigDto(
     int id,
     String documentId,
+    String title,
+    String description,
+    List<String> rules,
     int totalQuestions,
     int timeLimitMinutes,
     int passScore,

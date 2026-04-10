@@ -114,7 +114,7 @@ public class ReadinessService {
         int totalAttempts = progressRepository.countTotalAttempts(userId, productCode);
         Integer bestExamScore = examAttemptRepository.findBestScore(userId, productCode);
 
-        StrapiExamConfigDto examConfig = strapiContentCache.getExamConfig(productCode);
+        StrapiExamConfigDto examConfig = strapiContentCache.getExamConfig(productCode, locale);
         int passScore = examConfig != null ? examConfig.passScore() : 44;
 
         // Clamp attempted count to active total — progress records may reference

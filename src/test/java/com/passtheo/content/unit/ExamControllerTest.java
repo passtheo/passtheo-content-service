@@ -2,10 +2,12 @@ package com.passtheo.content.unit;
 
 import com.passtheo.shared.core.dto.AccessGrant;
 import com.passtheo.content.dto.request.StartExamRequest;
+import com.passtheo.content.dto.response.ExamConfigPreviewDto;
 import com.passtheo.content.dto.response.ExamDto;
 import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.MockExamService;
 import com.passtheo.content.controller.ExamController;
+import com.passtheo.shared.core.dto.ApiResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -72,5 +74,45 @@ class ExamControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(mockExamService).startExam(USER_ID, request);
+    }
+
+    @Test
+    void getExamConfig_returnsPreview() {
+        ExamConfigPreviewDto preview = new ExamConfigPreviewDto(
+                "Theory Exam",
+                "Simulate the real theory exam experience under authentic conditions.",
+                50, 30, 44,
+                List.of("Rule 1", "Rule 2")
+        );
+        when(mockExamService.getExamConfigPreview("auto-b", "en")).thenReturn(preview);
+
+        ResponseEntity<ApiResponse<ExamConfigPreviewDto>> response =
+                controller.getExamConfig("auto-b", "en");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().title()).isEqualTo("Theory Exam");
+        assertThat(response.getBody().getData().totalQuestions()).isEqualTo(50);
+        assertThat(response.getBody().getData().rules()).hasSize(2);
+        verify(mockExamService).getExamConfigPreview("auto-b", "en");
+    }
+
+    @Test
+    void getExamConfig_noLocaleParam_usesDefaultNl() {
+        ExamConfigPreviewDto preview = new ExamConfigPreviewDto(
+                "Theorie-examen",
+                "Simuleer het echte theorie-examen.",
+                50, 30, 44,
+                List.of("Regel 1")
+        );
+        when(mockExamService.getExamConfigPreview("auto-b", "nl")).thenReturn(preview);
+
+        ResponseEntity<ApiResponse<ExamConfigPreviewDto>> response =
+                controller.getExamConfig("auto-b", "nl");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().title()).isEqualTo("Theorie-examen");
+        verify(mockExamService).getExamConfigPreview("auto-b", "nl");
     }
 }

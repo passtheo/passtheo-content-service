@@ -2,6 +2,7 @@ package com.passtheo.content.controller;
 
 import com.passtheo.content.dto.request.StartExamRequest;
 import com.passtheo.content.dto.request.SubmitExamRequest;
+import com.passtheo.content.dto.response.ExamConfigPreviewDto;
 import com.passtheo.content.dto.response.ExamDto;
 import com.passtheo.content.dto.response.ExamHistorySummaryDto;
 import com.passtheo.content.dto.response.ExamResultDto;
@@ -52,6 +53,22 @@ public class ExamController {
                           EntitlementChecker entitlementChecker) {
         this.mockExamService = mockExamService;
         this.entitlementChecker = entitlementChecker;
+    }
+
+    /**
+     * Returns exam configuration preview for the intro screen.
+     *
+     * @param productCode the product code
+     * @param locale      the content locale
+     * @return exam config preview
+     */
+    @GetMapping("/config")
+    public ResponseEntity<ApiResponse<ExamConfigPreviewDto>> getExamConfig(
+            @RequestParam @Nonnull String productCode,
+            @RequestParam(defaultValue = "nl") String locale) {
+
+        ExamConfigPreviewDto config = mockExamService.getExamConfigPreview(productCode, locale);
+        return ResponseEntity.ok(ApiResponse.success(config, MDC.get("traceId")));
     }
 
     /**

@@ -13,6 +13,7 @@ import com.passtheo.content.domain.valueobject.StreakResult;
 import com.passtheo.content.domain.valueobject.XpResult;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
+import com.passtheo.content.dto.response.ExamConfigPreviewDto;
 import com.passtheo.content.dto.response.ExamDto;
 import com.passtheo.content.dto.response.BreakdownQuestionDto;
 import com.passtheo.content.dto.response.ExamHistorySummaryDto;
@@ -114,6 +115,30 @@ public class MockExamService {
     }
 
     /**
+     * Returns a lightweight preview of the exam configuration for the intro screen.
+     *
+     * @param productCode the product code
+     * @param locale      the content locale
+     * @return exam config preview with display text and numeric parameters
+     */
+    public ExamConfigPreviewDto getExamConfigPreview(@Nonnull String productCode, @Nonnull String locale) {
+        StrapiExamConfigDto config = strapiContentCache.getExamConfig(productCode, locale);
+        if (config == null) {
+            LOG.error("Exam config not found for preview: product={}", productCode);
+            throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.RESOURCE_NOT_FOUND,
+                    "Exam config not found for product: " + productCode);
+        }
+        return new ExamConfigPreviewDto(
+                config.title() != null ? config.title() : "",
+                config.description() != null ? config.description() : "",
+                config.totalQuestions(),
+                config.timeLimitMinutes(),
+                config.passScore(),
+                config.rules() != null ? List.copyOf(config.rules()) : List.of()
+        );
+    }
+
+    /**
      * Starts a mock exam — generates questions across all domains, shuffled.
      *
      * @param userId  the user's Keycloak ID
@@ -124,7 +149,7 @@ public class MockExamService {
     public ExamDto startExam(@Nonnull UUID userId, @Nonnull StartExamRequest request) {
         String locale = request.locale() != null ? request.locale() : "nl";
 
-        StrapiExamConfigDto examConfig = strapiContentCache.getExamConfig(request.productCode());
+        StrapiExamConfigDto examConfig = strapiContentCache.getExamConfig(request.productCode(), locale);
         if (examConfig == null) {
             LOG.error("Exam config not found: product={}", request.productCode());
             throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR, "Exam config not found for product: " + request.productCode());

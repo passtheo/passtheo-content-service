@@ -193,13 +193,15 @@ public class StrapiClient {
      * Fetches exam config for a product.
      *
      * @param productCode the product code
+     * @param locale      the content locale
      * @return the exam config
      */
-    public StrapiExamConfigDto getExamConfig(@Nonnull String productCode) {
-        LOG.debug("Fetching exam config from Strapi, product={}", productCode);
+    public StrapiExamConfigDto getExamConfig(@Nonnull String productCode, @Nonnull String locale) {
+        LOG.debug("Fetching exam config from Strapi, product={}, locale={}", productCode, locale);
         List<StrapiExamConfigDto> configs = fetchCollection(
                 "/api/exam-configs?filters[product][code][$eq]=" + productCode
-                        + "&populate=domainWeights",
+                        + "&populate=domainWeights"
+                        + "&locale=" + locale,
                 new ParameterizedTypeReference<StrapiResponse<StrapiExamConfigDto>>() {
                 });
         return configs.isEmpty() ? null : configs.getFirst();
