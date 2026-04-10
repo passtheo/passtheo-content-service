@@ -96,4 +96,23 @@ class ExamControllerTest {
         assertThat(response.getBody().getData().rules()).hasSize(2);
         verify(mockExamService).getExamConfigPreview("auto-b", "en");
     }
+
+    @Test
+    void getExamConfig_noLocaleParam_usesDefaultNl() {
+        ExamConfigPreviewDto preview = new ExamConfigPreviewDto(
+                "Theorie-examen",
+                "Simuleer het echte theorie-examen.",
+                50, 30, 44,
+                List.of("Regel 1")
+        );
+        when(mockExamService.getExamConfigPreview("auto-b", "nl")).thenReturn(preview);
+
+        ResponseEntity<ApiResponse<ExamConfigPreviewDto>> response =
+                controller.getExamConfig("auto-b", "nl");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().title()).isEqualTo("Theorie-examen");
+        verify(mockExamService).getExamConfigPreview("auto-b", "nl");
+    }
 }

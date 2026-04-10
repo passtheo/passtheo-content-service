@@ -121,21 +121,20 @@ public class MockExamService {
      * @param locale      the content locale
      * @return exam config preview with display text and numeric parameters
      */
-    @Transactional(readOnly = true)
     public ExamConfigPreviewDto getExamConfigPreview(@Nonnull String productCode, @Nonnull String locale) {
         StrapiExamConfigDto config = strapiContentCache.getExamConfig(productCode, locale);
         if (config == null) {
             LOG.error("Exam config not found for preview: product={}", productCode);
-            throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+            throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.RESOURCE_NOT_FOUND,
                     "Exam config not found for product: " + productCode);
         }
         return new ExamConfigPreviewDto(
-                config.title(),
-                config.description(),
+                config.title() != null ? config.title() : "",
+                config.description() != null ? config.description() : "",
                 config.totalQuestions(),
                 config.timeLimitMinutes(),
                 config.passScore(),
-                config.rules()
+                config.rules() != null ? List.copyOf(config.rules()) : List.of()
         );
     }
 
