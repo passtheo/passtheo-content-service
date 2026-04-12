@@ -163,6 +163,43 @@ class MockExamServiceTest {
     }
 
     @Test
+    void submitExam_noDomainOnQuestion_resolvedViaTopic() {
+        ExamAttempt attempt = buildAttempt();
+        when(examAttemptRepository.findByIdAndKeycloakUserId(EXAM_ID, USER_ID))
+                .thenReturn(Optional.of(attempt));
+        when(examAttemptRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(examAnswerRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Question has no domain but has a topic
+        StrapiQuestionDto question = buildQuestionWithoutDomain("q1", "verkeersborden");
+        when(strapiContentCache.getQuestion("q1", "nl")).thenReturn(question);
+        when(answerProcessingService.gradeAnswer(eq(question), any())).thenReturn(true);
+        when(answerProcessingService.buildCorrectAnswer(question)).thenReturn(Map.of("answer", true));
+        when(strapiContentCache.getDomainCodeForTopic("verkeersborden", PRODUCT_CODE, "nl"))
+                .thenReturn("voorrang");
+
+        when(readinessService.calculate(eq(USER_ID), eq(PRODUCT_CODE), eq("nl")))
+                .thenReturn(buildMinimalReadiness());
+        when(achievementService.checkAchievements(USER_ID, PRODUCT_CODE)).thenReturn(List.of());
+        when(streakService.updateStreak(USER_ID, PRODUCT_CODE))
+                .thenReturn(new StreakResult(1, 1, 1, null, 0, 0, true, false, true));
+        when(xpService.grantXp(eq(USER_ID), eq(PRODUCT_CODE), anyInt()))
+                .thenReturn(new XpResult(14, 14, 1, 100, false, 1));
+        when(strapiContentCache.getDomains(PRODUCT_CODE, "nl"))
+                .thenReturn(List.of(new StrapiDomainDto(1, "d1", "Voorrang", "voorrang", null, null, null, null, null, true, false, 1)));
+
+        SubmitExamRequest request = new SubmitExamRequest(List.of(
+                new SubmitExamRequest.ExamAnswerItem("q1", Map.of("answer", true), 5000)
+        ));
+
+        ExamResultDto result = service.submitExam(USER_ID, EXAM_ID, request, "nl");
+
+        assertThat(result.domainBreakdown()).hasSize(1);
+        assertThat(result.domainBreakdown().get(0).domainCode()).isEqualTo("voorrang");
+        assertThat(result.domainBreakdown().get(0).domainName()).isEqualTo("Voorrang");
+    }
+
+    @Test
     void getExamConfigPreview_returnsPreviewFromCache() {
         StrapiExamConfigDto config = new StrapiExamConfigDto(
                 1, "doc1", "Theory Exam", "Simulate the real exam.", List.of("Rule 1", "Rule 2"),
@@ -188,6 +225,17 @@ class MockExamServiceTest {
         assertThatThrownBy(() -> service.getExamConfigPreview(PRODUCT_CODE, "en"))
                 .isInstanceOf(AppException.class)
                 .hasMessageContaining("Exam config not found");
+    }
+
+    private StrapiQuestionDto buildQuestionWithoutDomain(String docId, String topicCode) {
+        return new StrapiQuestionDto(
+                1, docId, "Question " + docId,
+                "yes_no", "medium",
+                null, null, null, null, 1, false, false, null, null,
+                List.of(), null, null, null, null, null,
+                null,
+                new StrapiRelationDto(0, null, topicCode, null),
+                null);
     }
 
     private ReadinessScore buildMinimalReadiness() {
