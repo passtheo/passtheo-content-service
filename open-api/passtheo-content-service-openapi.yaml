@@ -2029,14 +2029,25 @@ components:
 
     BreakdownQuestionDto:
       type: object
+      description: >
+        Per-question detail in the session/exam breakdown. When isSkipped is true,
+        userAnswer is null and correctAnswer is an empty object (answer not revealed
+        for unanswered questions).
       properties:
         questionOrder: { type: integer }
         strapiQuestionId: { type: string }
         interactionType: { type: string }
         isCorrect: { type: boolean }
-        isSkipped: { type: boolean }
-        userAnswer: { type: object }
-        correctAnswer: { type: object }
+        isSkipped:
+          type: boolean
+          description: True when the question was not answered (skipped or timer expired)
+        userAnswer:
+          type: object
+          nullable: true
+          description: The user's submitted answer, or null if skipped
+        correctAnswer:
+          type: object
+          description: The correct answer. Empty object when isSkipped is true (not revealed)
         questionSnapshot: { type: object }
         domainCode: { type: string }
         domainName: { type: string }

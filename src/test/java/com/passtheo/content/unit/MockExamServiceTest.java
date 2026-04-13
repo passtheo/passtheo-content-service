@@ -1,11 +1,13 @@
 package com.passtheo.content.unit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.passtheo.content.domain.entity.ExamAnswer;
 import com.passtheo.content.domain.entity.ExamAttempt;
 import com.passtheo.content.domain.enums.ExamType;
 import com.passtheo.content.dto.request.SubmitExamRequest;
 import com.passtheo.content.dto.response.ExamConfigPreviewDto;
 import com.passtheo.content.dto.response.ExamResultDto;
+import com.passtheo.content.dto.response.SessionBreakdownDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiQuestionDto;
 import com.passtheo.content.integration.strapi.dto.StrapiRelationDto;
@@ -197,6 +199,103 @@ class MockExamServiceTest {
         assertThat(result.domainBreakdown()).hasSize(1);
         assertThat(result.domainBreakdown().get(0).domainCode()).isEqualTo("voorrang");
         assertThat(result.domainBreakdown().get(0).domainName()).isEqualTo("Voorrang");
+    }
+
+    @Test
+    void submitExam_skippedQuestion_recordedAsIncorrectNotInWrongAnswers() {
+        ExamAttempt attempt = buildAttempt();
+        when(examAttemptRepository.findByIdAndKeycloakUserId(EXAM_ID, USER_ID))
+                .thenReturn(Optional.of(attempt));
+        when(examAttemptRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(examAnswerRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // q1 answered correctly, q2 skipped (null answer)
+        StrapiQuestionDto q1 = buildQuestion("q1", "voorrang");
+        StrapiQuestionDto q2 = buildQuestion("q2", "voorrang");
+        when(strapiContentCache.getQuestion("q1", "nl")).thenReturn(q1);
+        when(strapiContentCache.getQuestion("q2", "nl")).thenReturn(q2);
+        when(answerProcessingService.gradeAnswer(eq(q1), any())).thenReturn(true);
+        when(answerProcessingService.buildCorrectAnswer(q1)).thenReturn(Map.of("selectedOptionId", "1"));
+        when(answerProcessingService.buildCorrectAnswer(q2)).thenReturn(Map.of("selectedOptionId", "2"));
+
+        when(readinessService.calculate(eq(USER_ID), eq(PRODUCT_CODE), eq("nl")))
+                .thenReturn(buildMinimalReadiness());
+        when(achievementService.checkAchievements(USER_ID, PRODUCT_CODE)).thenReturn(List.of());
+        when(streakService.updateStreak(USER_ID, PRODUCT_CODE))
+                .thenReturn(new StreakResult(1, 1, 1, null, 0, 0, true, false, true));
+        when(xpService.grantXp(eq(USER_ID), eq(PRODUCT_CODE), anyInt()))
+                .thenReturn(new XpResult(14, 14, 1, 100, false, 1));
+        when(strapiContentCache.getDomains(PRODUCT_CODE, "nl"))
+                .thenReturn(List.of(new StrapiDomainDto(1, "d1", "Voorrang", "voorrang", null, null, null, null, null, true, false, 1)));
+
+        SubmitExamRequest request = new SubmitExamRequest(List.of(
+                new SubmitExamRequest.ExamAnswerItem("q1", Map.of("selectedOptionId", "1"), 5000),
+                new SubmitExamRequest.ExamAnswerItem("q2", null, null) // skipped
+        ));
+
+        ExamResultDto result = service.submitExam(USER_ID, EXAM_ID, request, "nl");
+
+        // q1 correct, q2 skipped (treated as incorrect) → 1/2
+        assertThat(result.correctCount()).isEqualTo(1);
+        assertThat(result.totalQuestions()).isEqualTo(2);
+        // Skipped questions should NOT appear in wrongAnswers
+        assertThat(result.wrongAnswers()).isEmpty();
+    }
+
+    @Test
+    void getExamBreakdown_skippedQuestion_hidesCorrectAnswer() {
+        ExamAttempt attempt = buildAttempt();
+        attempt.setCorrectCount(1);
+        attempt.setScorePercent(BigDecimal.valueOf(50.0));
+        attempt.setTimeTakenSeconds(120);
+        when(examAttemptRepository.findByIdAndKeycloakUserId(EXAM_ID, USER_ID))
+                .thenReturn(Optional.of(attempt));
+
+        // q1 answered, q2 skipped (userAnswer stored as "null")
+        ExamAnswer answered = new ExamAnswer();
+        answered.setQuestionOrder(1);
+        answered.setStrapiQuestionId("q1");
+        answered.setCorrect(true);
+        answered.setUserAnswer("{\"selectedOptionId\":\"1\"}");
+        answered.setCorrectAnswer("{\"selectedOptionId\":\"1\"}");
+        answered.setDomainCode("voorrang");
+
+        ExamAnswer skipped = new ExamAnswer();
+        skipped.setQuestionOrder(2);
+        skipped.setStrapiQuestionId("q2");
+        skipped.setCorrect(false);
+        skipped.setUserAnswer("null"); // SKIP_ANSWER_JSON
+        skipped.setCorrectAnswer("{\"selectedOptionId\":\"2\"}");
+        skipped.setDomainCode("voorrang");
+
+        when(examAnswerRepository.findByExamAttemptIdOrderByQuestionOrderAsc(EXAM_ID))
+                .thenReturn(List.of(answered, skipped));
+        when(strapiContentCache.getDomains(PRODUCT_CODE, "nl"))
+                .thenReturn(List.of(new StrapiDomainDto(1, "d1", "Voorrang", "voorrang", null, null, null, null, null, true, false, 1)));
+
+        StrapiQuestionDto q1 = buildQuestion("q1", "voorrang");
+        StrapiQuestionDto q2 = buildQuestion("q2", "voorrang");
+        when(strapiContentCache.getQuestion("q1", "nl")).thenReturn(q1);
+        when(strapiContentCache.getQuestion("q2", "nl")).thenReturn(q2);
+        when(answerProcessingService.buildQuestionSnapshot(q1)).thenReturn(Map.of("text", "Q1"));
+        when(answerProcessingService.buildQuestionSnapshot(q2)).thenReturn(Map.of("text", "Q2"));
+
+        SessionBreakdownDto breakdown = service.getExamBreakdown(USER_ID, EXAM_ID, "nl");
+
+        assertThat(breakdown.skippedCount()).isEqualTo(1);
+        assertThat(breakdown.questions()).hasSize(2);
+
+        // Answered question — shows both user and correct answer
+        var q1Dto = breakdown.questions().get(0);
+        assertThat(q1Dto.isSkipped()).isFalse();
+        assertThat(q1Dto.userAnswer()).isNotNull();
+        assertThat(q1Dto.correctAnswer()).isNotEmpty();
+
+        // Skipped question — hides correct answer, null user answer
+        var q2Dto = breakdown.questions().get(1);
+        assertThat(q2Dto.isSkipped()).isTrue();
+        assertThat(q2Dto.userAnswer()).isNull();
+        assertThat(q2Dto.correctAnswer()).isEmpty(); // empty map, not revealed
     }
 
     @Test
