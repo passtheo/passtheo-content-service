@@ -293,8 +293,8 @@ public class MockExamService {
                 continue;
             }
 
-            // Null answer means skipped (e.g. timer expired) — treat as incorrect, no grading
-            boolean isSkipped = item.answer() == null;
+            // Null or empty answer means skipped (e.g. timer expired) — treat as incorrect, no grading
+            boolean isSkipped = item.answer() == null || item.answer().isEmpty();
             boolean isCorrect = !isSkipped && answerProcessingService.gradeAnswer(question, item.answer());
             if (isCorrect) {
                 correctCount++;
@@ -455,7 +455,8 @@ public class MockExamService {
         int skippedCount = 0;
         List<BreakdownQuestionDto> breakdownQuestions = new ArrayList<>();
         for (ExamAnswer ea : answers) {
-            boolean isSkipped = SKIP_ANSWER_JSON.equals(ea.getUserAnswer());
+            boolean isSkipped = SKIP_ANSWER_JSON.equals(ea.getUserAnswer())
+                    || "{}".equals(ea.getUserAnswer());
             if (isSkipped) {
                 skippedCount++;
             }
