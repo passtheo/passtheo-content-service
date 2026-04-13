@@ -167,7 +167,8 @@ public class MockExamService {
         }
 
         // Select questions using domain weights + difficulty distribution
-        List<StrapiQuestionDto> examQuestions = selectQuestions(allQuestions, examConfig);
+        List<StrapiQuestionDto> examQuestions = selectQuestions(
+                allQuestions, examConfig, request.productCode(), locale);
 
         // Create exam attempt (placeholder — completed on submit)
         UUID examId = UUID.randomUUID();
@@ -295,7 +296,7 @@ public class MockExamService {
             }
             answerXp += isCorrect ? XpService.XP_CORRECT_ANSWER : XpService.XP_WRONG_ANSWER;
 
-            String domainCode = question.domain() != null ? question.domain().code() : "unknown";
+            String domainCode = resolveDomainCode(question, attempt.getProductCode(), locale);
             domainStats.computeIfAbsent(domainCode, k -> new int[]{0, 0});
             domainStats.get(domainCode)[1]++;
             if (isCorrect) {
@@ -512,7 +513,8 @@ public class MockExamService {
      * Falls back to simple shuffle-and-limit if no domainWeights are configured.
      */
     private List<StrapiQuestionDto> selectQuestions(List<StrapiQuestionDto> allQuestions,
-                                                     StrapiExamConfigDto examConfig) {
+                                                     StrapiExamConfigDto examConfig,
+                                                     String productCode, String locale) {
         List<StrapiExamConfigDto.DomainWeightDto> weights = examConfig.domainWeights();
         Map<String, Double> difficultyDist = examConfig.difficultyDistribution();
         int totalTarget = examConfig.totalQuestions();
@@ -521,7 +523,10 @@ public class MockExamService {
         List<StrapiQuestionDto> domainSelected;
         if (weights != null && !weights.isEmpty()) {
             Map<String, List<StrapiQuestionDto>> byDomain = allQuestions.stream()
-                    .collect(Collectors.groupingBy(q -> q.domain() != null ? q.domain().code() : ""));
+                    .collect(Collectors.groupingBy(q -> {
+                        String code = resolveDomainCode(q, productCode, locale);
+                        return code != null && !"unknown".equals(code) ? code : "";
+                    }));
             List<StrapiQuestionDto> selected = new ArrayList<>();
             for (StrapiExamConfigDto.DomainWeightDto w : weights) {
                 List<StrapiQuestionDto> pool = new ArrayList<>(
@@ -595,6 +600,24 @@ public class MockExamService {
             LOG.error("Failed to serialize JSON: {}", e.getMessage());
             return "{}";
         }
+    }
+
+    /**
+     * Resolves the domain code for a question, falling back to the topic-to-domain mapping cache.
+     *
+     * @param question    the Strapi question
+     * @param productCode the product code for the exam
+     * @param locale      the locale
+     * @return the domain code, or "unknown" if unresolvable
+     */
+    private String resolveDomainCode(StrapiQuestionDto question, String productCode, String locale) {
+        String domainCode = question.domain() != null ? question.domain().code() : null;
+        if ((domainCode == null || domainCode.isBlank())
+                && question.topic() != null && question.topic().code() != null) {
+            domainCode = strapiContentCache.getDomainCodeForTopic(
+                    question.topic().code(), productCode, locale);
+        }
+        return domainCode != null && !domainCode.isBlank() ? domainCode : "unknown";
     }
 
     @SuppressWarnings("unchecked")
