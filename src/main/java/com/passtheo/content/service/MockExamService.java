@@ -290,7 +290,8 @@ public class MockExamService {
                 continue;
             }
 
-            boolean isCorrect = answerProcessingService.gradeAnswer(question, item.answer());
+            boolean isCorrect = item.answer() != null && !item.answer().isEmpty()
+                    && answerProcessingService.gradeAnswer(question, item.answer());
             if (isCorrect) {
                 correctCount++;
             }
