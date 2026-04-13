@@ -67,6 +67,9 @@ public class MockExamService {
     private static final Logger LOG = LoggerFactory.getLogger(MockExamService.class);
     private static final Logger AUDIT = LoggerFactory.getLogger("AUDIT");
 
+    /** JSON representation of a skipped answer stored in exam_answers.user_answer. */
+    private static final String SKIP_ANSWER_JSON = "null";
+
     private final ExamAttemptRepository examAttemptRepository;
     private final ExamAnswerRepository examAnswerRepository;
     private final StrapiContentCache strapiContentCache;
@@ -290,7 +293,9 @@ public class MockExamService {
                 continue;
             }
 
-            boolean isCorrect = answerProcessingService.gradeAnswer(question, item.answer());
+            // Null answer means skipped (e.g. timer expired) — treat as incorrect, no grading
+            boolean isSkipped = item.answer() == null;
+            boolean isCorrect = !isSkipped && answerProcessingService.gradeAnswer(question, item.answer());
             if (isCorrect) {
                 correctCount++;
             }
@@ -303,7 +308,8 @@ public class MockExamService {
                 domainStats.get(domainCode)[0]++;
             }
 
-            // Save exam answer
+            // Save exam answer — use SKIP_ANSWER_JSON for skips (JSONB accepts JSON null)
+            String userAnswerJson = isSkipped ? SKIP_ANSWER_JSON : serializeJson(item.answer());
             ExamAnswer examAnswer = new ExamAnswer();
             examAnswer.setTenantId(TenantContext.get());
             examAnswer.setExamAttemptId(examId);
@@ -311,15 +317,15 @@ public class MockExamService {
             examAnswer.setQuestionVersion(question.version());
             examAnswer.setDomainCode(domainCode);
             examAnswer.setCorrect(isCorrect);
-            examAnswer.setUserAnswer(serializeJson(item.answer()));
+            examAnswer.setUserAnswer(userAnswerJson);
             examAnswer.setCorrectAnswer(serializeJson(answerProcessingService.buildCorrectAnswer(question)));
             examAnswer.setTimeTakenMs(item.timeTakenMs());
             examAnswer.setQuestionOrder(i + 1);
             examAnswer.setAnsweredAt(Instant.now());
             examAnswerRepository.save(examAnswer);
 
-            // Collect wrong answers for review
-            if (!isCorrect) {
+            // Collect wrong answers for review (skipped questions are not "wrong", just unanswered)
+            if (!isCorrect && !isSkipped) {
                 AnswerResultDto.ExplanationDto explanation = question.explanation() != null
                         ? new AnswerResultDto.ExplanationDto(
                         question.explanation().text(), question.explanation().tip(),
@@ -446,8 +452,14 @@ public class MockExamService {
                 .stream()
                 .collect(Collectors.toMap(StrapiDomainDto::code, StrapiDomainDto::name, (a, b) -> a));
 
+        int skippedCount = 0;
         List<BreakdownQuestionDto> breakdownQuestions = new ArrayList<>();
         for (ExamAnswer ea : answers) {
+            boolean isSkipped = SKIP_ANSWER_JSON.equals(ea.getUserAnswer());
+            if (isSkipped) {
+                skippedCount++;
+            }
+
             StrapiQuestionDto question = strapiContentCache.getQuestion(ea.getStrapiQuestionId(), locale);
 
             Map<String, Object> snapshot = Map.of();
@@ -457,14 +469,18 @@ public class MockExamService {
                 interactionType = question.interactionType();
             }
 
+            // For skipped questions: don't reveal the correct answer, same as practice breakdowns
+            Map<String, Object> userAnswer = isSkipped ? null : deserializeJson(ea.getUserAnswer());
+            Map<String, Object> correctAnswer = isSkipped ? Map.of() : deserializeJson(ea.getCorrectAnswer());
+
             breakdownQuestions.add(new BreakdownQuestionDto(
                     ea.getQuestionOrder(),
                     ea.getStrapiQuestionId(),
                     interactionType,
                     ea.isCorrect(),
-                    false, // exams have no skipped questions
-                    deserializeJson(ea.getUserAnswer()),
-                    deserializeJson(ea.getCorrectAnswer()),
+                    isSkipped,
+                    userAnswer,
+                    correctAnswer,
                     snapshot,
                     ea.getDomainCode(),
                     domainNameMap.getOrDefault(ea.getDomainCode(), ea.getDomainCode()),
@@ -479,7 +495,7 @@ public class MockExamService {
                 "COMPLETED",
                 attempt.getTotalQuestions(),
                 attempt.getCorrectCount(),
-                0, // no skipped in exams
+                skippedCount,
                 attempt.getScorePercent() != null ? attempt.getScorePercent().doubleValue() : 0.0,
                 attempt.getTimeTakenSeconds(),
                 new SessionSummaryDto.MasteryChangesDto(0, 0, 0),
