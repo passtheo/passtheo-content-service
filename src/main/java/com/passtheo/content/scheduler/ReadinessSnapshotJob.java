@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -72,7 +71,6 @@ public class ReadinessSnapshotJob {
      * Runs daily at 01:00 UTC to snapshot readiness for all active users.
      */
     @Scheduled(cron = "0 0 1 * * *", zone = "UTC")
-    @Transactional
     public void snapshotReadiness() {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         LOG.info("ReadinessSnapshotJob started for {}", today);
