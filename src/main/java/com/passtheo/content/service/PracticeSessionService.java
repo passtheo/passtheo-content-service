@@ -651,8 +651,10 @@ public class PracticeSessionService {
         List<EarnedAchievementDto> achievements = achievementService
                 .checkAchievements(userId, session.getProductCode());
 
-        // Grant session completion XP bonus
-        XpResult xpResult = xpService.grantXp(userId, session.getProductCode(), XpService.XP_PRACTICE_COMPLETE);
+        // Grant session completion XP bonus + any achievement XP
+        int achievementXp = achievements.stream().mapToInt(EarnedAchievementDto::xpReward).sum();
+        XpResult xpResult = xpService.grantXp(userId, session.getProductCode(),
+                XpService.XP_PRACTICE_COMPLETE + achievementXp);
 
         // Compute actual mastery changes from session answers
         List<SessionAnswer> sessionAnswers = answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId);
@@ -660,7 +662,8 @@ public class PracticeSessionService {
 
         LOG.info("Session completed: id={}, user={}, correct={}/{}, accuracy={}%, timeSpentSec={}, xp={}",
                 sessionId, userId, session.getCorrectCount(), session.getTotalQuestions(),
-                session.getAccuracyPercent(), session.getTimeSpentSeconds(), XpService.XP_PRACTICE_COMPLETE);
+                session.getAccuracyPercent(), session.getTimeSpentSeconds(),
+                XpService.XP_PRACTICE_COMPLETE + achievementXp);
         AUDIT.info("SESSION_COMPLETED sessionId={} userId={} correct={} total={} accuracyPct={} timeSpentSec={}",
                 sessionId, userId, session.getCorrectCount(), session.getTotalQuestions(),
                 session.getAccuracyPercent(), session.getTimeSpentSeconds());
@@ -675,7 +678,7 @@ public class PracticeSessionService {
                 masteryChanges,
                 new StreakUpdateDto(streak.currentStreak(), streak.isNewDay()),
                 achievements,
-                new XpUpdateDto(XpService.XP_PRACTICE_COMPLETE, xpResult.totalXp(),
+                new XpUpdateDto(XpService.XP_PRACTICE_COMPLETE + achievementXp, xpResult.totalXp(),
                         xpResult.currentLevel(), xpResult.xpForNextLevel(), xpResult.leveledUp())
         );
     }

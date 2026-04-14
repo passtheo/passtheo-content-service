@@ -272,13 +272,13 @@ class KarateRunner {
         return java.util.Arrays.asList(
                 new StrapiAchievementDefDto(1, null, "Eerste Stap", "first_question",
                         "Beantwoord je eerste vraag", "\uD83C\uDFAF", "\uD83D\uDD12",
-                        "questions_answered", 1, 10, true, 1, "auto-b"),
+                        "QUESTIONS_ANSWERED", 1, 10, true, 1, "auto-b"),
                 new StrapiAchievementDefDto(2, null, "Beginnersluk", "ten_questions",
                         "Beantwoord 10 vragen", "\u2B50", "\uD83D\uDD12",
-                        "questions_answered", 10, 50, true, 2, null),
+                        "QUESTIONS_ANSWERED", 10, 50, true, 2, null),
                 new StrapiAchievementDefDto(3, null, "Weekkampioen", "7_day_streak",
                         "7 dagen op rij gestudeerd", "\uD83D\uDD25", "\uD83D\uDD12",
-                        "study_days_streak", 7, 100, true, 3, null)
+                        "STREAK_DAYS", 7, 100, true, 3, null)
         );
     }
 }
