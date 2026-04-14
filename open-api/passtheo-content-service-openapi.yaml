@@ -919,6 +919,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_ReadinessTrend'
 
+  /api/progress/xp:
+    get:
+      operationId: getUserXp
+      tags: [Progress]
+      summary: Get current XP and level for the authenticated user
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/UserHeader'
+        - name: productCode
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current XP state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_XpUpdate'
+              example:
+                success: true
+                data:
+                  xpEarned: 0
+                  totalXp: 1340
+                  currentLevel: 7
+                  xpForNextLevel: 2800
+                  leveledUp: false
+                timestamp: "2026-04-14T10:00:00Z"
+        '401':
+          description: Missing or invalid JWT
+
   /api/progress/domains:
     get:
       operationId: getDomainProgress
@@ -2065,3 +2099,30 @@ components:
         comment:
           type: string
           nullable: true
+
+    XpUpdateDto:
+      type: object
+      properties:
+        xpEarned:
+          type: integer
+          description: XP earned in this operation (0 for GET)
+        totalXp:
+          type: integer
+          description: Cumulative total XP
+        currentLevel:
+          type: integer
+          description: Current level
+        xpForNextLevel:
+          type: integer
+          description: XP threshold for the next level
+        leveledUp:
+          type: boolean
+          description: Whether a level-up occurred (false for GET)
+
+    ApiResponse_XpUpdate:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          $ref: '#/components/schemas/XpUpdateDto'
+        timestamp: { type: string, format: date-time }
