@@ -47,7 +47,8 @@ public class ReadinessSnapshot extends BaseEntity {
     @Column(name = "best_exam_score")
     private Integer bestExamScore;
 
-    protected ReadinessSnapshot() {}
+    /** JPA requires a no-arg constructor. Public so schedulers/services can create instances. */
+    public ReadinessSnapshot() {}
 
     public UUID getKeycloakUserId() { return keycloakUserId; }
     public void setKeycloakUserId(UUID keycloakUserId) { this.keycloakUserId = keycloakUserId; }
