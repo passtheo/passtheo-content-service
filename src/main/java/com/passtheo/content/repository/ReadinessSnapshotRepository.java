@@ -27,6 +27,18 @@ public interface ReadinessSnapshotRepository extends JpaRepository<ReadinessSnap
             @Nonnull UUID keycloakUserId, @Nonnull String productCode, @Nonnull LocalDate since);
 
     /**
+     * Checks whether a snapshot already exists for a user/product/date.
+     * Used by ReadinessSnapshotJob to prevent duplicate snapshots.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @param snapshotDate   the date
+     * @return true if a snapshot already exists
+     */
+    boolean existsByKeycloakUserIdAndProductCodeAndSnapshotDate(
+            @Nonnull UUID keycloakUserId, @Nonnull String productCode, @Nonnull LocalDate snapshotDate);
+
+    /**
      * Deletes all snapshots for a user (GDPR).
      *
      * @param keycloakUserId the user's Keycloak ID

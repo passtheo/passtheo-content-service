@@ -89,6 +89,30 @@ public interface QuestionProgressRepository extends JpaRepository<QuestionProgre
                                                      @Nonnull @Param("productCode") String productCode);
 
     /**
+     * Projection for distinct active user-product-tenant tuples.
+     * Used by ReadinessSnapshotJob to snapshot all active users.
+     */
+    interface UserProductProjection {
+        /** @return the tenant UUID */
+        UUID getTenantId();
+        /** @return the user's Keycloak UUID */
+        UUID getKeycloakUserId();
+        /** @return the product code */
+        String getProductCode();
+    }
+
+    /**
+     * Finds distinct active user/product/tenant combinations that have question progress.
+     *
+     * @return list of projections for each unique tuple
+     */
+    @Query(value = "SELECT DISTINCT tenant_id AS tenantId, keycloak_user_id AS keycloakUserId, " +
+           "product_code AS productCode FROM question_progress " +
+           "WHERE total_attempts > 0 AND deleted_at IS NULL",
+           nativeQuery = true)
+    List<UserProductProjection> findDistinctActiveUserProducts();
+
+    /**
      * Per-topic mastery aggregate computed directly from question_progress rows.
      * Used instead of the (never-populated) topic_progress table.
      */
