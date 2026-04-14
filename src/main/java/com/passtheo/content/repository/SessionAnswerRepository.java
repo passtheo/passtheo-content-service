@@ -69,4 +69,24 @@ public interface SessionAnswerRepository extends JpaRepository<SessionAnswer, UU
             @Param("productCode") String productCode,
             @Param("startDate") Instant startDate,
             @Param("endDate") Instant endDate);
+
+    /**
+     * Computes the average answer time in milliseconds for a user/product.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return average time in ms, or null if no answers
+     */
+    @Query(value = """
+            SELECT AVG(sa.time_taken_ms)
+            FROM session_answers sa
+            JOIN study_sessions ss ON sa.session_id = ss.id
+            WHERE ss.keycloak_user_id = :userId
+              AND ss.product_code = :productCode
+              AND sa.deleted_at IS NULL
+              AND ss.deleted_at IS NULL
+            """, nativeQuery = true)
+    Double averageTimeTakenMs(
+            @Param("userId") UUID keycloakUserId,
+            @Param("productCode") String productCode);
 }

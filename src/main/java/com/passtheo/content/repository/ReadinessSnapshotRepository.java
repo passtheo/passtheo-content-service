@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -37,6 +38,16 @@ public interface ReadinessSnapshotRepository extends JpaRepository<ReadinessSnap
      */
     boolean existsByKeycloakUserIdAndProductCodeAndSnapshotDate(
             @Nonnull UUID keycloakUserId, @Nonnull String productCode, @Nonnull LocalDate snapshotDate);
+
+    /**
+     * Finds the most recent readiness snapshot for a user/product.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return the latest snapshot, or empty if none exists
+     */
+    Optional<ReadinessSnapshot> findTopByKeycloakUserIdAndProductCodeOrderBySnapshotDateDesc(
+            @Nonnull UUID keycloakUserId, @Nonnull String productCode);
 
     /**
      * Deletes all snapshots for a user (GDPR).

@@ -59,4 +59,18 @@ public interface StudySessionRepository extends JpaRepository<StudySession, UUID
      */
     long countByKeycloakUserIdAndProductCodeAndStatus(
             @Nonnull UUID keycloakUserId, @Nonnull String productCode, @Nonnull SessionStatus status);
+
+    /**
+     * Counts completed sessions where the user answered every question correctly.
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return count of perfect sessions
+     */
+    @Query("SELECT COUNT(ss) FROM StudySession ss WHERE ss.keycloakUserId = :userId " +
+           "AND ss.productCode = :productCode " +
+           "AND ss.status = com.passtheo.content.domain.enums.SessionStatus.COMPLETED " +
+           "AND ss.correctCount = ss.totalQuestions AND ss.totalQuestions > 0 " +
+           "AND ss.deletedAt IS NULL")
+    long countPerfectSessions(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
 }

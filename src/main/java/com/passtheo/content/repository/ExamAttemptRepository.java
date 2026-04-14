@@ -77,6 +77,17 @@ public interface ExamAttemptRepository extends JpaRepository<ExamAttempt, UUID> 
                           @Param("cutoff") Instant cutoff);
 
     /**
+     * Counts total completed exams for a user/product (regardless of pass/fail).
+     *
+     * @param keycloakUserId the user's Keycloak ID
+     * @param productCode    the product code
+     * @return count of completed exams
+     */
+    @Query("SELECT COUNT(ea) FROM ExamAttempt ea WHERE ea.keycloakUserId = :userId " +
+           "AND ea.productCode = :productCode AND ea.deletedAt IS NULL")
+    long countCompletedExams(@Param("userId") UUID keycloakUserId, @Param("productCode") String productCode);
+
+    /**
      * Finds an exam attempt by ID and user.
      *
      * @param id             the exam attempt ID
