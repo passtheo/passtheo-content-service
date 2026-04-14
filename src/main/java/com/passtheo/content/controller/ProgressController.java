@@ -2,13 +2,16 @@ package com.passtheo.content.controller;
 
 import com.passtheo.content.domain.valueobject.ExamConfidence;
 import com.passtheo.content.domain.valueobject.ReadinessScore;
+import com.passtheo.content.domain.valueobject.XpResult;
 import com.passtheo.content.dto.response.DomainProgressDto;
 import com.passtheo.content.dto.response.MasteryStatsDto;
 import com.passtheo.content.dto.response.ReadinessDto;
 import com.passtheo.content.dto.response.ReadinessSnapshotDto;
+import com.passtheo.content.dto.response.XpUpdateDto;
 import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.content.service.ProgressService;
 import com.passtheo.content.service.ReadinessService;
+import com.passtheo.content.service.XpService;
 import com.passtheo.shared.core.dto.ApiResponse;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -39,6 +42,7 @@ public class ProgressController {
     private final ReadinessService readinessService;
     private final ProgressService progressService;
     private final PracticeSessionService practiceSessionService;
+    private final XpService xpService;
 
     /**
      * Constructs the progress controller.
@@ -46,12 +50,14 @@ public class ProgressController {
      * @param readinessService       readiness score service
      * @param progressService        progress aggregation service
      * @param practiceSessionService practice session service (for flag/unflag)
+     * @param xpService              XP and level service
      */
     public ProgressController(ReadinessService readinessService, ProgressService progressService,
-                              PracticeSessionService practiceSessionService) {
+                              PracticeSessionService practiceSessionService, XpService xpService) {
         this.readinessService = readinessService;
         this.progressService = progressService;
         this.practiceSessionService = practiceSessionService;
+        this.xpService = xpService;
     }
 
     /**
@@ -106,6 +112,25 @@ public class ProgressController {
 
         List<ReadinessSnapshotDto> trend = progressService.getReadinessTrend(userId, productCode, days);
         return ResponseEntity.ok(ApiResponse.success(trend, MDC.get("traceId")));
+    }
+
+    /**
+     * Gets the current XP and level for the authenticated user.
+     *
+     * @param userId      user ID from header
+     * @param productCode the product code
+     * @return current XP state
+     */
+    @GetMapping("/xp")
+    public ResponseEntity<ApiResponse<XpUpdateDto>> getUserXp(
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @RequestParam @Nonnull String productCode) {
+
+        XpResult result = xpService.getXp(userId, productCode);
+        XpUpdateDto dto = new XpUpdateDto(
+                result.xpEarned(), result.totalXp(), result.currentLevel(),
+                result.xpForNextLevel(), result.leveledUp());
+        return ResponseEntity.ok(ApiResponse.success(dto, MDC.get("traceId")));
     }
 
     /**
