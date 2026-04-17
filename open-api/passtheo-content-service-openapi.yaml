@@ -1691,6 +1691,58 @@ components:
         correctCount: { type: integer }
         currentQuestion:
           $ref: '#/components/schemas/QuestionDto'
+        answeredQuestions:
+          type: array
+          description: Lightweight summary of previously answered questions for navigator grid.
+          items:
+            type: object
+            properties:
+              questionOrder: { type: integer }
+              strapiQuestionId: { type: string }
+              correct: { type: boolean }
+              skipped: { type: boolean }
+        answeredQuestionContents:
+          type: array
+          description: |
+            Full content of each previously answered question so the client can
+            rehydrate per-question state (user's selection, revealed correct
+            answer, explanation) when resuming a session. Ordered by questionOrder
+            ascending.
+
+            Slot alignment: items whose underlying question has been deactivated
+            or deleted from Strapi are omitted, so this list may be shorter than
+            `answeredCount`. Clients must place each entry at
+            `questionOrder - 1` and treat any gap as an unreachable locked slot,
+            rather than using the array position.
+          items:
+            $ref: '#/components/schemas/AnsweredQuestionFullDto'
+
+    AnsweredQuestionFullDto:
+      type: object
+      properties:
+        questionOrder: { type: integer }
+        question:
+          $ref: '#/components/schemas/QuestionDto'
+        userAnswer:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: The user's submitted answer payload (shape varies by interactionType). Null when the question was skipped.
+        correctAnswer:
+          type: object
+          additionalProperties: true
+          description: The revealed correct answer payload (shape varies by interactionType).
+        explanation:
+          type: object
+          nullable: true
+          properties:
+            text: { type: string }
+            tip: { type: string, nullable: true }
+            imageUrl: { type: string, nullable: true }
+            legalReference: { type: string, nullable: true }
+        isCorrect: { type: boolean }
+        skipped: { type: boolean }
+        timeTakenMs: { type: integer }
 
     QuestionDto:
       type: object
