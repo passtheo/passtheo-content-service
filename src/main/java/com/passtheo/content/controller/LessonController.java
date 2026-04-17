@@ -72,12 +72,12 @@ public class LessonController {
      * @return 204 No Content
      */
     @DeleteMapping("/{lessonSlug}/complete")
-    public ResponseEntity<ApiResponse<Void>> uncomplete(
+    public ResponseEntity<Void> uncomplete(
             @PathVariable @Nonnull String lessonSlug,
             @RequestParam @Nonnull String productCode,
             @RequestHeader("X-Keycloak-User-ID") UUID userId) {
         lessonProgressService.uncompleteLesson(userId, lessonSlug, productCode);
-        return ResponseEntity.ok(ApiResponse.success(null, MDC.get("traceId")));
+        return ResponseEntity.noContent().build();
     }
 
     /**

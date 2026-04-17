@@ -8,8 +8,12 @@ import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.LessonCompleteResponse;
 import com.passtheo.content.dto.response.LessonProgressDto;
 import com.passtheo.content.dto.response.XpUpdateDto;
+import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.content.integration.strapi.dto.StrapiLessonDto;
 import com.passtheo.content.repository.LessonProgressRepository;
 import com.passtheo.shared.core.context.TenantContext;
+import com.passtheo.shared.core.exception.AppException;
+import com.passtheo.shared.core.exception.ErrorCode;
 import com.passtheo.shared.events.config.KafkaTopic;
 import com.passtheo.shared.events.content.LessonCompletedEvent;
 import com.passtheo.shared.outbox.entity.OutboxEvent;
@@ -18,6 +22,7 @@ import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,10 +45,17 @@ public class LessonProgressService {
 
     private static final Logger LOG = LoggerFactory.getLogger(LessonProgressService.class);
 
+    /** Canonical locale used to validate lesson slugs against Strapi. Slug is not localized. */
+    private static final String CANONICAL_LOCALE = "nl";
+
+    /** Upper bound on time-spent per complete call to prevent abuse via arbitrary backdating. */
+    private static final int MAX_TIME_SPENT_SECONDS = 4 * 60 * 60;
+
     private final LessonProgressRepository lessonProgressRepository;
     private final XpService xpService;
     private final AchievementService achievementService;
     private final OutboxEventRepository outboxEventRepository;
+    private final StrapiContentCache strapiContentCache;
     private final ObjectMapper objectMapper;
 
     /**
@@ -53,17 +65,20 @@ public class LessonProgressService {
      * @param xpService                XP service
      * @param achievementService       achievement service
      * @param outboxEventRepository    outbox event repository
+     * @param strapiContentCache       Strapi content cache (for lesson validation)
      * @param objectMapper             JSON object mapper (Spring-configured with JavaTimeModule)
      */
     public LessonProgressService(LessonProgressRepository lessonProgressRepository,
                                  XpService xpService,
                                  AchievementService achievementService,
                                  OutboxEventRepository outboxEventRepository,
+                                 StrapiContentCache strapiContentCache,
                                  ObjectMapper objectMapper) {
         this.lessonProgressRepository = lessonProgressRepository;
         this.xpService = xpService;
         this.achievementService = achievementService;
         this.outboxEventRepository = outboxEventRepository;
+        this.strapiContentCache = strapiContentCache;
         this.objectMapper = objectMapper;
     }
 
@@ -85,6 +100,8 @@ public class LessonProgressService {
                                                  @Nonnull String productCode,
                                                  @Nonnull String topicCode,
                                                  int timeSpentSeconds) {
+        validateLessonExists(topicCode, lessonSlug);
+
         Optional<LessonProgress> existing = lessonProgressRepository
                 .findByKeycloakUserIdAndProductCodeAndLessonSlug(userId, productCode, lessonSlug);
 
@@ -102,7 +119,7 @@ public class LessonProgressService {
                     List.of());
         }
 
-        int safeTimeSpent = Math.max(0, timeSpentSeconds);
+        int safeTimeSpent = Math.min(MAX_TIME_SPENT_SECONDS, Math.max(0, timeSpentSeconds));
         Instant now = Instant.now();
 
         LessonProgress row = existing.orElseGet(() -> {
@@ -182,6 +199,14 @@ public class LessonProgressService {
                         row.getCompletedAt(),
                         row.getTimeSpentSeconds()))
                 .toList();
+    }
+
+    private void validateLessonExists(String topicCode, String lessonSlug) {
+        List<StrapiLessonDto> lessons = strapiContentCache.getLessons(topicCode, CANONICAL_LOCALE);
+        if (lessons == null || lessons.stream().noneMatch(l -> lessonSlug.equals(l.slug()))) {
+            throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                    "Lesson not found: topicCode=" + topicCode + ", lessonSlug=" + lessonSlug);
+        }
     }
 
     private void publishLessonCompletedEvent(UUID tenantId, UUID userId,

@@ -98,3 +98,33 @@ Feature: Lesson Completion Tracking
     When method GET
     Then status 200
     And match response.data == '#[0]'
+
+  # ─── TENANT / USER ISOLATION (RLS) ───
+
+  Scenario: User B cannot see user A's lesson progress on the same slug
+    # User A completes a lesson
+    * def lessonSlug = 'verbodsborden-basis'
+    * def paidHeaders = { 'X-Tenant-ID': '#(tenantId)', 'X-Keycloak-User-ID': '33333333-3333-3333-3333-333333333333', 'Authorization': '#("Bearer " + paidToken)' }
+    Given path '/api/content/lessons/' + lessonSlug + '/complete'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', topicCode: 'verbodsborden', timeSpentSeconds: 60 }
+    When method POST
+    Then status 200
+    # User B (fresh) fetches progress for the same topic — should NOT see user A's row
+    Given path '/api/content/lessons/progress'
+    And headers freshHeaders
+    And param productCode = 'auto-b'
+    And param topicCode = 'verbodsborden'
+    When method GET
+    Then status 200
+    # User B's progress list must not contain the slug that user A completed
+    And assert response.data.filter(p => p.lessonSlug == 'verbodsborden-basis' && p.isCompleted == true).length == 0
+
+  # ─── NEGATIVE ───
+
+  Scenario: Complete with unknown lesson slug returns 404
+    Given path '/api/content/lessons/totally-fake-slug-xyz/complete'
+    And headers freshHeaders
+    And request { productCode: 'auto-b', topicCode: 'verbodsborden', timeSpentSeconds: 30 }
+    When method POST
+    Then status 404

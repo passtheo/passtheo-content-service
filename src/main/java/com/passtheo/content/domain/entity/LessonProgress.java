@@ -43,9 +43,6 @@ public class LessonProgress extends BaseEntity {
     @Column(name = "time_spent_seconds", nullable = false)
     private int timeSpentSeconds;
 
-    @Column(name = "last_scroll_position", nullable = false)
-    private int lastScrollPosition;
-
     @Version
     @Column(name = "version", nullable = false)
     private int version;
@@ -68,7 +65,6 @@ public class LessonProgress extends BaseEntity {
         this.completed = false;
         this.startedAt = Instant.now();
         this.timeSpentSeconds = 0;
-        this.lastScrollPosition = 0;
     }
 
     public UUID getKeycloakUserId() {
@@ -117,14 +113,6 @@ public class LessonProgress extends BaseEntity {
 
     public void setTimeSpentSeconds(int timeSpentSeconds) {
         this.timeSpentSeconds = timeSpentSeconds;
-    }
-
-    public int getLastScrollPosition() {
-        return lastScrollPosition;
-    }
-
-    public void setLastScrollPosition(int lastScrollPosition) {
-        this.lastScrollPosition = lastScrollPosition;
     }
 
     public int getVersion() {

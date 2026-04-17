@@ -11,7 +11,6 @@ CREATE TABLE lesson_progress (
     started_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
     completed_at         TIMESTAMPTZ,
     time_spent_seconds   INTEGER      NOT NULL DEFAULT 0,
-    last_scroll_position INTEGER      NOT NULL DEFAULT 0,
     created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at           TIMESTAMPTZ,
@@ -19,8 +18,7 @@ CREATE TABLE lesson_progress (
 
     CONSTRAINT uq_lesson_progress_user_slug
         UNIQUE (tenant_id, keycloak_user_id, product_code, lesson_slug),
-    CONSTRAINT ck_lesson_progress_time_positive CHECK (time_spent_seconds >= 0),
-    CONSTRAINT ck_lesson_progress_scroll_positive CHECK (last_scroll_position >= 0)
+    CONSTRAINT ck_lesson_progress_time_positive CHECK (time_spent_seconds >= 0)
 );
 
 -- Row-Level Security

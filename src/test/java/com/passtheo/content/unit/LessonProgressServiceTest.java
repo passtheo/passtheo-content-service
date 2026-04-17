@@ -5,11 +5,14 @@ import com.passtheo.content.domain.valueobject.XpResult;
 import com.passtheo.content.dto.response.EarnedAchievementDto;
 import com.passtheo.content.dto.response.LessonCompleteResponse;
 import com.passtheo.content.dto.response.LessonProgressDto;
+import com.passtheo.content.integration.strapi.StrapiContentCache;
+import com.passtheo.content.integration.strapi.dto.StrapiLessonDto;
 import com.passtheo.content.repository.LessonProgressRepository;
 import com.passtheo.content.service.AchievementService;
 import com.passtheo.content.service.LessonProgressService;
 import com.passtheo.content.service.XpService;
 import com.passtheo.shared.core.context.TenantContext;
+import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.outbox.entity.OutboxEvent;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -26,9 +29,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -47,6 +52,7 @@ class LessonProgressServiceTest {
     @Mock private XpService xpService;
     @Mock private AchievementService achievementService;
     @Mock private OutboxEventRepository outboxEventRepository;
+    @Mock private StrapiContentCache strapiContentCache;
 
     private LessonProgressService service;
 
@@ -57,12 +63,33 @@ class LessonProgressServiceTest {
                 new com.fasterxml.jackson.databind.ObjectMapper()
                         .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         service = new LessonProgressService(
-                lessonProgressRepository, xpService, achievementService, outboxEventRepository, realMapper);
+                lessonProgressRepository, xpService, achievementService, outboxEventRepository,
+                strapiContentCache, realMapper);
+
+        // Default: every lesson slug is valid. Tests that need to assert invalid
+        // slugs override this stub. Lenient because some tests (e.g., getProgress
+        // queries) don't exercise the validation path.
+        lenient().when(strapiContentCache.getLessons(any(), any()))
+                .thenReturn(List.of(
+                        new StrapiLessonDto(1, "doc-1", "Voorrangsbord uitleg", SLUG,
+                                List.of(), null, null, null, 0, true, false, 0)));
     }
 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    @Test
+    void completeLesson_unknownSlug_throws404() {
+        when(strapiContentCache.getLessons(TOPIC, "nl")).thenReturn(List.of());
+
+        assertThatThrownBy(() ->
+                service.completeLesson(USER_ID, "fake-slug", PRODUCT, TOPIC, 60))
+                .isInstanceOf(AppException.class)
+                .hasMessageContaining("Lesson not found");
+
+        verifyNoInteractions(lessonProgressRepository, xpService, achievementService, outboxEventRepository);
     }
 
     @Test
