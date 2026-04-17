@@ -186,6 +186,43 @@ class LessonProgressServiceTest {
     }
 
     @Test
+    void completeLesson_afterUncomplete_doesNotGrantXpAgain() {
+        // Row where completed_at is already set (user previously completed this lesson)
+        // but is_completed is false (user has since marked it unread).
+        LessonProgress previouslyCompleted = new LessonProgress(USER_ID, PRODUCT, TOPIC, SLUG);
+        previouslyCompleted.setCompleted(false);
+        previouslyCompleted.setCompletedAt(Instant.parse("2026-04-01T10:00:00Z"));
+        previouslyCompleted.setTimeSpentSeconds(300);
+
+        when(lessonProgressRepository.findByKeycloakUserIdAndProductCodeAndLessonSlug(USER_ID, PRODUCT, SLUG))
+                .thenReturn(Optional.of(previouslyCompleted));
+        when(xpService.getXp(USER_ID, PRODUCT))
+                .thenReturn(new XpResult(0, 500, 3, 600, false, 3));
+
+        LessonCompleteResponse response = service.completeLesson(USER_ID, SLUG, PRODUCT, TOPIC, 999);
+
+        // No XP granted — completed_at was already set.
+        assertThat(response.xpUpdate().xpEarned()).isZero();
+        assertThat(response.xpUpdate().totalXp()).isEqualTo(500);
+        assertThat(response.newAchievements()).isEmpty();
+        assertThat(response.isCompleted()).isTrue();
+        // Original completedAt timestamp is preserved — this is the true first-completion.
+        assertThat(response.completedAt()).isEqualTo(Instant.parse("2026-04-01T10:00:00Z"));
+
+        // is_completed flipped back to true and row saved.
+        ArgumentCaptor<LessonProgress> saved = ArgumentCaptor.forClass(LessonProgress.class);
+        verify(lessonProgressRepository).save(saved.capture());
+        assertThat(saved.getValue().isCompleted()).isTrue();
+        assertThat(saved.getValue().getCompletedAt()).isEqualTo(Instant.parse("2026-04-01T10:00:00Z"));
+        // time_spent_seconds frozen at 300 (no further accumulation after rewards locked).
+        assertThat(saved.getValue().getTimeSpentSeconds()).isEqualTo(300);
+
+        // Zero interactions with reward subsystems.
+        verify(xpService, never()).grantXp(any(), any(), anyInt());
+        verifyNoInteractions(achievementService, outboxEventRepository);
+    }
+
+    @Test
     void uncompleteLesson_clearsCompletionFlagWithoutRefund() {
         LessonProgress existing = new LessonProgress(USER_ID, PRODUCT, TOPIC, SLUG);
         existing.setCompleted(true);
