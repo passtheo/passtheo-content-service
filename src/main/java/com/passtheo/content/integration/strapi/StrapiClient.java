@@ -281,6 +281,36 @@ public class StrapiClient {
     }
 
     /**
+     * Fetches only the total count of lessons for a product using Strapi pagination metadata.
+     * Sends {@code pagination[pageSize]=1} so Strapi does not return all rows — only the
+     * {@code meta.pagination.total}.
+     *
+     * @param productCode the product code
+     * @param locale      the content locale
+     * @return total number of active lessons for the product, or 0 if unavailable
+     */
+    public int countLessonsByProduct(@Nonnull String productCode, @Nonnull String locale) {
+        LOG.debug("Counting lessons from Strapi, product={}, locale={}", productCode, locale);
+        String uri = "/api/lessons?filters[topic][product][code][$eq]=" + productCode
+                + "&filters[isActive][$eq]=true&locale=" + locale
+                + "&pagination[pageSize]=1&fields[0]=id";
+        try {
+            StrapiResponse<StrapiLessonDto> response = webClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<StrapiResponse<StrapiLessonDto>>() { })
+                    .block();
+            if (response == null || response.meta() == null || response.meta().pagination() == null) {
+                return 0;
+            }
+            return response.meta().pagination().total();
+        } catch (Exception e) {
+            LOG.error("Failed to count lessons for product={} from Strapi: {}", productCode, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * Fetches a Strapi 5 collection endpoint, unwraps the {@code {"data":[...],"meta":{...}}} wrapper,
      * and logs a warning when the total item count exceeds the page size.
      */

@@ -17,6 +17,7 @@ import com.passtheo.content.repository.ReadinessSnapshotRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StudySessionRepository;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
+import com.passtheo.content.repository.LessonProgressRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.shared.core.context.TenantContext;
@@ -31,7 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -62,6 +65,7 @@ public class AchievementService {
     private final StudySessionRepository sessionRepository;
     private final SessionAnswerRepository answerRepository;
     private final ReadinessSnapshotRepository readinessSnapshotRepository;
+    private final LessonProgressRepository lessonProgressRepository;
     private final StrapiContentCache strapiContentCache;
     private final OutboxEventRepository outboxEventRepository;
 
@@ -75,6 +79,7 @@ public class AchievementService {
      * @param sessionRepository           study session repository
      * @param answerRepository            session answer repository
      * @param readinessSnapshotRepository readiness snapshot repository
+     * @param lessonProgressRepository    lesson progress repository
      * @param strapiContentCache          Strapi content cache
      * @param outboxEventRepository       outbox event repository
      */
@@ -85,6 +90,7 @@ public class AchievementService {
                               StudySessionRepository sessionRepository,
                               SessionAnswerRepository answerRepository,
                               ReadinessSnapshotRepository readinessSnapshotRepository,
+                              LessonProgressRepository lessonProgressRepository,
                               StrapiContentCache strapiContentCache,
                               OutboxEventRepository outboxEventRepository) {
         this.achievementRepository = achievementRepository;
@@ -94,6 +100,7 @@ public class AchievementService {
         this.sessionRepository = sessionRepository;
         this.answerRepository = answerRepository;
         this.readinessSnapshotRepository = readinessSnapshotRepository;
+        this.lessonProgressRepository = lessonProgressRepository;
         this.strapiContentCache = strapiContentCache;
         this.outboxEventRepository = outboxEventRepository;
     }
@@ -212,6 +219,36 @@ public class AchievementService {
                     yield 0;
                 }
                 yield (int) (avgMs / 1000.0);
+            }
+
+            case "LESSONS_COMPLETED" ->
+                    (int) lessonProgressRepository
+                            .countByKeycloakUserIdAndProductCodeAndCompletedTrue(userId, productCode);
+
+            case "LESSONS_COMPLETED_ALL" -> {
+                int completed = (int) lessonProgressRepository
+                        .countByKeycloakUserIdAndProductCodeAndCompletedTrue(userId, productCode);
+                int total = strapiContentCache.getLessonCountForProduct(productCode, DEFAULT_LOCALE);
+                // Yields 1 (threshold met) when every active lesson in the product has been
+                // completed at least once, 0 otherwise.
+                yield (total > 0 && completed >= total) ? 1 : 0;
+            }
+
+            case "TOPIC_LESSONS_COMPLETED" -> {
+                // Yields 1 when any single topic has been fully completed (all lessons read).
+                Map<String, Long> perTopic = new HashMap<>();
+                for (Object[] row : lessonProgressRepository.countCompletedByTopic(userId, productCode)) {
+                    perTopic.put((String) row[0], (Long) row[1]);
+                }
+                int result = 0;
+                for (Map.Entry<String, Long> entry : perTopic.entrySet()) {
+                    int topicTotal = strapiContentCache.getLessons(entry.getKey(), DEFAULT_LOCALE).size();
+                    if (topicTotal > 0 && entry.getValue() >= topicTotal) {
+                        result = 1;
+                        break;
+                    }
+                }
+                yield result;
             }
 
             default -> {

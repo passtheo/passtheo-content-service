@@ -13,6 +13,7 @@ import com.passtheo.content.repository.ReadinessSnapshotRepository;
 import com.passtheo.content.repository.SessionAnswerRepository;
 import com.passtheo.content.repository.StudySessionRepository;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
+import com.passtheo.content.repository.LessonProgressRepository;
 import com.passtheo.content.repository.QuestionProgressRepository;
 import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.service.AchievementService;
@@ -53,6 +54,7 @@ class AchievementServiceTest {
     @Mock private StudySessionRepository sessionRepository;
     @Mock private SessionAnswerRepository answerRepository;
     @Mock private ReadinessSnapshotRepository readinessSnapshotRepository;
+    @Mock private LessonProgressRepository lessonProgressRepository;
     @Mock private StrapiContentCache strapiContentCache;
     @Mock private OutboxEventRepository outboxEventRepository;
 
@@ -68,7 +70,8 @@ class AchievementServiceTest {
         achievementService = new AchievementService(
                 achievementRepository, progressRepository, streakRepository,
                 examAttemptRepository, sessionRepository, answerRepository,
-                readinessSnapshotRepository, strapiContentCache, outboxEventRepository);
+                readinessSnapshotRepository, lessonProgressRepository,
+                strapiContentCache, outboxEventRepository);
     }
 
     @AfterEach
