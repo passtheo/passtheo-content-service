@@ -83,9 +83,11 @@ public class LessonProgressService {
     }
 
     /**
-     * Marks a lesson complete for a user. First-time completion grants XP, checks
-     * achievements, and publishes a {@link LessonCompletedEvent}. Subsequent completions
-     * are idempotent and return {@code xpEarned=0} with no event.
+     * Marks a lesson complete for a user. XP, achievement checks, and the Kafka event
+     * fire only on the first-ever completion of this lesson (tracked via
+     * {@code completed_at}). Re-completing a lesson that has been marked unread and
+     * marked read again returns {@code xpEarned=0} with no new event — this prevents
+     * XP farming via mark-unread / mark-read cycling.
      *
      * @param userId           the user's Keycloak ID
      * @param lessonSlug       the lesson slug
@@ -105,10 +107,18 @@ public class LessonProgressService {
         Optional<LessonProgress> existing = lessonProgressRepository
                 .findByKeycloakUserIdAndProductCodeAndLessonSlug(userId, productCode, lessonSlug);
 
-        if (existing.isPresent() && existing.get().isCompleted()) {
+        // Sticky guard: completed_at is set once on first completion and never cleared
+        // by uncompleteLesson. Using it (instead of is_completed) prevents XP farming
+        // when a user cycles mark-unread / mark-read.
+        if (existing.isPresent() && existing.get().getCompletedAt() != null) {
             LessonProgress row = existing.get();
+            // User may have toggled to "unread" and back — flip is_completed=true if needed.
+            if (!row.isCompleted()) {
+                row.setCompleted(true);
+                lessonProgressRepository.save(row);
+            }
             XpResult current = xpService.getXp(userId, productCode);
-            LOG.debug("Lesson already completed — returning idempotent response: user={}, slug={}",
+            LOG.debug("Lesson already rewarded — returning idempotent response: user={}, slug={}",
                     userId, lessonSlug);
             return new LessonCompleteResponse(
                     lessonSlug,
