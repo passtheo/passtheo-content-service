@@ -19,6 +19,7 @@ import com.passtheo.content.dto.request.SubmitAnswerRequest;
 import com.passtheo.content.dto.response.ActiveSessionDto;
 import com.passtheo.content.dto.response.AnswerResultDto;
 import com.passtheo.shared.core.dto.AccessGrant;
+import com.passtheo.content.dto.response.AnsweredQuestionFullDto;
 import com.passtheo.content.dto.response.AnsweredQuestionSummaryDto;
 import com.passtheo.content.dto.response.DomainSummaryDto;
 import com.passtheo.content.domain.entity.QuestionReport;
@@ -216,6 +217,7 @@ public class PracticeSessionService {
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
                 firstQuestion,
+                List.of(),
                 List.of()
         );
     }
@@ -604,13 +606,20 @@ public class PracticeSessionService {
             }
         }
 
-        List<AnsweredQuestionSummaryDto> answeredQuestions = answerRepository
-                .findBySessionIdOrderByQuestionOrderAsc(sessionId).stream()
+        List<SessionAnswer> answers = answerRepository
+                .findBySessionIdOrderByQuestionOrderAsc(sessionId);
+
+        List<AnsweredQuestionSummaryDto> answeredQuestions = answers.stream()
                 .map(a -> new AnsweredQuestionSummaryDto(
                         a.getQuestionOrder(),
                         a.getStrapiQuestionId(),
                         a.isCorrect(),
                         SKIP_ANSWER_JSON.equals(a.getUserAnswer())))
+                .toList();
+
+        List<AnsweredQuestionFullDto> answeredQuestionContents = answers.stream()
+                .map(a -> buildAnsweredQuestionFull(a, locale))
+                .filter(java.util.Objects::nonNull)
                 .toList();
 
         return new SessionDto(
@@ -620,7 +629,46 @@ public class PracticeSessionService {
                 session.getAnsweredCount(),
                 session.getCorrectCount(),
                 currentQuestion,
-                answeredQuestions
+                answeredQuestions,
+                answeredQuestionContents
+        );
+    }
+
+    /**
+     * Builds a full-content snapshot for a previously answered question. Returns
+     * null when the underlying question has been deleted or deactivated in
+     * Strapi (caller filters nulls). The explanation is translated from the
+     * {@link QuestionDto.ExplanationDto} shape (used on the question payload)
+     * to the {@link AnswerResultDto.ExplanationDto} shape (used on reveal).
+     */
+    @Nullable
+    private AnsweredQuestionFullDto buildAnsweredQuestionFull(@Nonnull SessionAnswer answer,
+                                                              @Nonnull String locale) {
+        QuestionDto question = loadQuestion(
+                answer.getStrapiQuestionId(), locale, answer.getQuestionOrder());
+        if (question == null) {
+            return null;
+        }
+        boolean skipped = SKIP_ANSWER_JSON.equals(answer.getUserAnswer());
+        Map<String, Object> userAnswer = skipped ? null : deserializeJson(answer.getUserAnswer());
+        Map<String, Object> correctAnswer = deserializeJson(answer.getCorrectAnswer());
+        AnswerResultDto.ExplanationDto explanation = null;
+        if (question.explanation() != null) {
+            explanation = new AnswerResultDto.ExplanationDto(
+                    question.explanation().text(),
+                    question.explanation().tip(),
+                    question.explanation().imageUrl(),
+                    question.explanation().legalReference());
+        }
+        return new AnsweredQuestionFullDto(
+                answer.getQuestionOrder(),
+                question,
+                userAnswer,
+                correctAnswer,
+                explanation,
+                answer.isCorrect(),
+                skipped,
+                answer.getTimeTakenMs()
         );
     }
 

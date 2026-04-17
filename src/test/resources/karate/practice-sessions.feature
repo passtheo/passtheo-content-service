@@ -159,6 +159,54 @@ Feature: Practice Sessions
     And match response.data.status == 'IN_PROGRESS'
     And match response.data.currentQuestion != null
 
+  Scenario: Resume returns full content for previously answered and skipped questions
+    # Start a 5-question session
+    Given path '/api/practice/sessions'
+    And headers paidHeaders
+    And request { productCode: 'auto-b', domainCode: 'verkeersborden', sessionType: 'PRACTICE', questionCount: 5, locale: 'nl' }
+    When method POST
+    Then status 200
+    * def sessionId = response.data.sessionId
+    * def q1Id = response.data.currentQuestion.strapiQuestionId
+    * def q1OptionId = response.data.currentQuestion.answerOptions[0].id
+    # Answer Q1 (whatever the first option is — correctness is irrelevant for the resume contract)
+    Given path '/api/practice/sessions/' + sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(q1Id)', answer: { selectedOptionId: '#(q1OptionId)' }, timeTakenMs: 4200 }
+    When method POST
+    Then status 200
+    * def q2Id = response.data.nextQuestion.strapiQuestionId
+    # Skip Q2
+    Given path '/api/practice/sessions/' + sessionId + '/answer'
+    And headers paidHeaders
+    And request { strapiQuestionId: '#(q2Id)', answer: null, timeTakenMs: 1500 }
+    When method POST
+    Then status 200
+    # Now resume the session
+    Given path '/api/practice/sessions/' + sessionId
+    And headers paidHeaders
+    When method GET
+    Then status 200
+    And match response.data.answeredCount == 2
+    And match response.data.currentQuestion.questionOrder == 3
+    # Existing summary payload still present for backwards compatibility
+    And match response.data.answeredQuestions == '#[2]'
+    # New rich payload: two items ordered by questionOrder ascending
+    And match response.data.answeredQuestionContents == '#[2]'
+    And match response.data.answeredQuestionContents[0].questionOrder == 1
+    And match response.data.answeredQuestionContents[0].question.strapiQuestionId == q1Id
+    And match response.data.answeredQuestionContents[0].question.questionText == '#string'
+    And match response.data.answeredQuestionContents[0].userAnswer != null
+    And match response.data.answeredQuestionContents[0].correctAnswer != null
+    And match response.data.answeredQuestionContents[0].explanation != null
+    And match response.data.answeredQuestionContents[0].isCorrect == '#boolean'
+    And match response.data.answeredQuestionContents[0].skipped == false
+    And assert response.data.answeredQuestionContents[0].timeTakenMs >= 0
+    And match response.data.answeredQuestionContents[1].questionOrder == 2
+    And match response.data.answeredQuestionContents[1].question.strapiQuestionId == q2Id
+    And match response.data.answeredQuestionContents[1].skipped == true
+    And match response.data.answeredQuestionContents[1].isCorrect == false
+
   Scenario: Complete session returns summary
     Given path '/api/practice/sessions'
     And headers paidHeaders
