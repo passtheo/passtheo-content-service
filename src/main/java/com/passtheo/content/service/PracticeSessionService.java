@@ -609,18 +609,20 @@ public class PracticeSessionService {
         List<SessionAnswer> answers = answerRepository
                 .findBySessionIdOrderByQuestionOrderAsc(sessionId);
 
-        List<AnsweredQuestionSummaryDto> answeredQuestions = answers.stream()
-                .map(a -> new AnsweredQuestionSummaryDto(
-                        a.getQuestionOrder(),
-                        a.getStrapiQuestionId(),
-                        a.isCorrect(),
-                        SKIP_ANSWER_JSON.equals(a.getUserAnswer())))
-                .toList();
-
-        List<AnsweredQuestionFullDto> answeredQuestionContents = answers.stream()
-                .map(a -> buildAnsweredQuestionFull(a, locale))
-                .filter(java.util.Objects::nonNull)
-                .toList();
+        // Single pass over the answer rows to populate both projections.
+        List<AnsweredQuestionSummaryDto> answeredQuestions = new ArrayList<>(answers.size());
+        List<AnsweredQuestionFullDto> answeredQuestionContents = new ArrayList<>(answers.size());
+        for (SessionAnswer a : answers) {
+            answeredQuestions.add(new AnsweredQuestionSummaryDto(
+                    a.getQuestionOrder(),
+                    a.getStrapiQuestionId(),
+                    a.isCorrect(),
+                    SKIP_ANSWER_JSON.equals(a.getUserAnswer())));
+            AnsweredQuestionFullDto full = buildAnsweredQuestionFull(a, locale);
+            if (full != null) {
+                answeredQuestionContents.add(full);
+            }
+        }
 
         return new SessionDto(
                 session.getId(),

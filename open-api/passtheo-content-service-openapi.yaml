@@ -1706,7 +1706,14 @@ components:
           description: |
             Full content of each previously answered question so the client can
             rehydrate per-question state (user's selection, revealed correct
-            answer, explanation) when resuming a session. Ordered by questionOrder ascending.
+            answer, explanation) when resuming a session. Ordered by questionOrder
+            ascending.
+
+            Slot alignment: items whose underlying question has been deactivated
+            or deleted from Strapi are omitted, so this list may be shorter than
+            `answeredCount`. Clients must place each entry at
+            `questionOrder - 1` and treat any gap as an unreachable locked slot,
+            rather than using the array position.
           items:
             $ref: '#/components/schemas/AnsweredQuestionFullDto'
 

@@ -215,6 +215,53 @@ class PracticeSessionServiceActiveSessionTest {
         assertThat(second.timeTakenMs()).isEqualTo(1500);
     }
 
+    @Test
+    void getSession_deactivatedAnsweredQuestion_filteredFromContentsKeptInSummary() {
+        // Session with 5 questions, 2 answered — Q1 loads normally, Q2 has been
+        // deactivated/deleted from Strapi. The summary list must still contain
+        // both entries (client needs counters), but answeredQuestionContents
+        // must omit Q2 since its content can no longer be rendered.
+        UUID sessionId = UUID.randomUUID();
+        StudySession session = new StudySession(USER_ID, PRODUCT_CODE, "voorrang", null,
+                SessionType.PRACTICE, 5, "nl");
+        session.setId(sessionId);
+        session.setAnsweredCount(2);
+        session.setQuestionIdList(List.of("doc-q1", "doc-q2", "doc-q3", "doc-q4", "doc-q5"));
+
+        when(sessionRepository.findByIdAndKeycloakUserId(sessionId, USER_ID))
+                .thenReturn(Optional.of(session));
+
+        SessionAnswer answered1 = new SessionAnswer(
+                sessionId, USER_ID, "doc-q1", 1, "multiple_choice", true,
+                "{\"selectedOptionId\":\"opt-a\"}",
+                "{\"selectedOptionId\":\"opt-a\"}",
+                4200, 1);
+        SessionAnswer answered2Deactivated = new SessionAnswer(
+                sessionId, USER_ID, "doc-q2", 1, "multiple_choice", false,
+                "{\"selectedOptionId\":\"opt-b\"}",
+                "{\"selectedOptionId\":\"opt-a\"}",
+                3100, 2);
+        when(answerRepository.findBySessionIdOrderByQuestionOrderAsc(sessionId))
+                .thenReturn(List.of(answered1, answered2Deactivated));
+
+        when(strapiContentCache.getQuestion("doc-q1", "nl"))
+                .thenReturn(buildStrapiQuestion("doc-q1", "What is Q1?"));
+        when(strapiContentCache.getQuestion("doc-q2", "nl")).thenReturn(null);
+        when(strapiContentCache.getQuestion("doc-q3", "nl"))
+                .thenReturn(buildStrapiQuestion("doc-q3", "What is Q3?"));
+
+        SessionDto result = service.getSession(USER_ID, sessionId);
+
+        assertThat(result.answeredCount()).isEqualTo(2);
+        assertThat(result.answeredQuestions()).hasSize(2);
+        assertThat(result.answeredQuestions().get(1).questionOrder()).isEqualTo(2);
+        // Only the still-live answered question surfaces in the full-content list.
+        assertThat(result.answeredQuestionContents()).hasSize(1);
+        assertThat(result.answeredQuestionContents().get(0).questionOrder()).isEqualTo(1);
+        assertThat(result.answeredQuestionContents().get(0).question().strapiQuestionId())
+                .isEqualTo("doc-q1");
+    }
+
     private StrapiQuestionDto buildStrapiQuestion(String documentId, String questionText) {
         return new StrapiQuestionDto(
                 1, documentId, questionText, "multiple_choice", "medium",
