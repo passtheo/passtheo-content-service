@@ -330,6 +330,21 @@ public class StrapiContentCache {
     }
 
     /**
+     * Gets the total number of active lessons for a product with caching.
+     * Uses Strapi pagination metadata so the entire lesson set does not have to be fetched.
+     *
+     * @param productCode the product code
+     * @param locale      the content locale
+     * @return total count of active lessons for the product, or 0 if unavailable
+     */
+    public int getLessonCountForProduct(@Nonnull String productCode, @Nonnull String locale) {
+        Integer cached = getCachedOrFetch("lessons:count:" + productCode + ":" + locale,
+                new TypeReference<Integer>() { },
+                () -> strapiClient.countLessonsByProduct(productCode, locale));
+        return cached != null ? cached : 0;
+    }
+
+    /**
      * Resolves the domain code for a given topic code by iterating the cached domain/topic tree.
      * Used when a question's domain relation is null (Strapi does not set domain directly on questions).
      *

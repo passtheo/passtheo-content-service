@@ -46,6 +46,9 @@ public class XpService {
     /** Additional bonus XP for a perfect exam score. */
     public static final int XP_PERFECT_EXAM = 500;
 
+    /** XP for completing (reading) a lesson. Granted only on first completion. */
+    public static final int XP_LESSON_COMPLETE = 20;
+
     private final UserXpRepository userXpRepository;
 
     /**
