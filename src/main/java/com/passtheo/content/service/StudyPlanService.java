@@ -114,6 +114,73 @@ public class StudyPlanService {
                     planRepository.saveAndFlush(existing);
                 });
 
+        ComputedPlan computed = computePlan(userId, request, locale);
+
+        StudyPlan plan = new StudyPlan();
+        plan.setTenantId(TenantContext.get());
+        plan.setKeycloakUserId(userId);
+        plan.setProductCode(request.productCode());
+        plan.setExamDate(computed.examDate());
+        plan.setTotalDays(computed.days().size());
+        plan.setStatus(PlanStatus.ACTIVE);
+        plan.setDailyQuestionTarget(computed.dailyQuestionTarget());
+        plan.setFocusDomains(serializeJson(computed.focusDomains()));
+        plan.setUpdatedAt(Instant.now());
+        plan = planRepository.save(plan);
+
+        for (StudyPlanDay day : computed.days()) {
+            day.setPlanId(plan.getId());
+        }
+        planDayRepository.saveAll(computed.days());
+
+        LOG.info("Study plan generated: id={}, user={}, product={}, days={}, focusDomains={}",
+                plan.getId(), userId, request.productCode(), computed.days().size(), computed.focusDomains());
+
+        return toPlanDto(plan, computed.days(), 1);
+    }
+
+    /**
+     * Computes what a new study plan would look like for the given inputs,
+     * <em>without</em> persisting anything or touching the user's existing
+     * active plan. Returns a {@link StudyPlanDto} shaped identically to the one
+     * {@link #generatePlan} returns, but with {@code planId=null} and
+     * {@code status="PREVIEW"} so callers can distinguish preview from real.
+     *
+     * <p>Use case: Flutter shows a confirmation dialog with the new daily goal
+     * and total days before the user commits to changing their exam date or
+     * product.
+     *
+     * @param userId  the user's Keycloak ID
+     * @param request the plan generation request
+     * @param locale  content locale
+     * @return a preview of the plan
+     */
+    @Transactional(readOnly = true)
+    public StudyPlanDto previewPlan(@Nonnull UUID userId, @Nonnull GenerateStudyPlanRequest request,
+                                    @Nonnull String locale) {
+        ComputedPlan computed = computePlan(userId, request, locale);
+
+        List<StudyPlanDayDto> dayDtos = computed.days().stream()
+                .map(d -> new StudyPlanDayDto(
+                        d.getDayNumber(), d.getPlanDate(),
+                        d.getDomainCode(), d.getDomainCode(),
+                        d.getQuestionTarget(), d.getQuestionsCompleted(),
+                        d.isIncludeExam(), d.getStatus().name(), null))
+                .toList();
+
+        return new StudyPlanDto(
+                null,
+                request.productCode(),
+                computed.examDate(),
+                computed.days().size(),
+                0,
+                computed.dailyQuestionTarget(),
+                "PREVIEW",
+                computed.focusDomains(),
+                dayDtos);
+    }
+
+    private ComputedPlan computePlan(UUID userId, GenerateStudyPlanRequest request, String locale) {
         ReadinessScore readiness = readinessService.calculate(userId, request.productCode(), locale);
 
         LocalDate startDate = LocalDate.now(ZoneOffset.UTC);
@@ -136,7 +203,6 @@ public class StudyPlanService {
             totalDays = DEFAULT_PLAN_DAYS;
         }
 
-        // Resolve dailyQuestionTarget: auto-calculate when not provided
         int resolvedDailyTarget;
         if (request.dailyQuestionTarget() != null) {
             resolvedDailyTarget = request.dailyQuestionTarget();
@@ -146,7 +212,6 @@ public class StudyPlanService {
                 long totalQuestions = strapiContentCache.getQuestionCount(request.productCode(), locale);
                 long mastered = progressRepository.countByKeycloakUserIdAndProductCodeAndMasteryLevel(
                         userId, request.productCode(), MasteryLevel.MASTERED);
-                // Clamp mastered to active total — progress records may reference deactivated questions
                 long clampedMastered = Math.min(mastered, totalQuestions);
                 long remaining = Math.max(totalQuestions - clampedMastered, 0);
                 resolvedDailyTarget = (int) Math.min(50, Math.max(5,
@@ -158,7 +223,6 @@ public class StudyPlanService {
             resolvedDailyTarget = 20;
         }
 
-        // Sort domains by weakness; fall back to all Strapi domains if no progress exists
         List<ReadinessScore.DomainStrengthValue> domains = new ArrayList<>(readiness.domainStrengths());
         if (domains.isEmpty()) {
             domains = strapiContentCache.getDomains(request.productCode(), locale).stream()
@@ -170,7 +234,6 @@ public class StudyPlanService {
 
         Map<String, Integer> allocation = allocateDays(domains, totalDays);
 
-        // Generate daily tasks
         List<StudyPlanDay> days = new ArrayList<>();
         int dayNumber = 1;
         LocalDate planDate = startDate;
@@ -192,7 +255,6 @@ public class StudyPlanService {
             }
         }
 
-        // Last 3 days: mixed review + daily mock exams
         for (int i = 0; i < MIXED_REVIEW_DAYS && dayNumber <= totalDays; i++) {
             StudyPlanDay day = new StudyPlanDay();
             day.setTenantId(TenantContext.get());
@@ -208,36 +270,25 @@ public class StudyPlanService {
             planDate = planDate.plusDays(1);
         }
 
-        // Focus domains
         List<String> focusDomains = domains.stream()
                 .filter(d -> "WEAK".equals(d.strength()) || "MODERATE".equals(d.strength()))
                 .map(ReadinessScore.DomainStrengthValue::domainCode)
                 .toList();
 
-        // Save plan
-        StudyPlan plan = new StudyPlan();
-        plan.setTenantId(TenantContext.get());
-        plan.setKeycloakUserId(userId);
-        plan.setProductCode(request.productCode());
-        plan.setExamDate(resolvedExamDate);
-        plan.setTotalDays(days.size());
-        plan.setStatus(PlanStatus.ACTIVE);
-        plan.setDailyQuestionTarget(resolvedDailyTarget);
-        plan.setFocusDomains(serializeJson(focusDomains));
-        plan.setUpdatedAt(Instant.now());
-        plan = planRepository.save(plan);
-
-        // Save plan days
-        for (StudyPlanDay day : days) {
-            day.setPlanId(plan.getId());
-        }
-        planDayRepository.saveAll(days);
-
-        LOG.info("Study plan generated: id={}, user={}, product={}, days={}, focusDomains={}",
-                plan.getId(), userId, request.productCode(), days.size(), focusDomains);
-
-        return toPlanDto(plan, days, 1);
+        return new ComputedPlan(resolvedExamDate, resolvedDailyTarget, focusDomains, days);
     }
+
+    /**
+     * Pure-compute result shared by {@link #generatePlan} and {@link #previewPlan}.
+     * The {@code days} list is unpersisted; {@code generatePlan} assigns
+     * {@code planId} and saves them; {@code previewPlan} converts them to DTOs.
+     */
+    private record ComputedPlan(
+            LocalDate examDate,
+            int dailyQuestionTarget,
+            List<String> focusDomains,
+            List<StudyPlanDay> days
+    ) {}
 
     /**
      * Abandons the active study plan for a user/product, if one exists.

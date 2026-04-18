@@ -90,4 +90,26 @@ public class StudyPlanController {
         StudyPlanDayDto today = studyPlanService.getTodaysTasks(userId, productCode);
         return ResponseEntity.ok(ApiResponse.success(today, MDC.get("traceId")));
     }
+
+    /**
+     * Previews what a new study plan would look like for the given inputs,
+     * without persisting anything or touching the user's existing active plan.
+     * Returns a {@link StudyPlanDto} with {@code planId=null} and
+     * {@code status="PREVIEW"} so callers can distinguish preview from real.
+     *
+     * @param userId  user ID from header — used to pull the caller's mastery
+     *                count for an accurate daily-goal preview
+     * @param request the plan-generation inputs (productCode, examDate, optional dailyQuestionTarget)
+     * @param locale  content locale
+     * @return a preview of the plan
+     */
+    @PostMapping("/preview")
+    public ResponseEntity<ApiResponse<StudyPlanDto>> previewStudyPlan(
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
+            @RequestBody @Valid @Nonnull GenerateStudyPlanRequest request,
+            @RequestParam(defaultValue = "nl") String locale) {
+
+        StudyPlanDto preview = studyPlanService.previewPlan(userId, request, locale);
+        return ResponseEntity.ok(ApiResponse.success(preview, MDC.get("traceId")));
+    }
 }

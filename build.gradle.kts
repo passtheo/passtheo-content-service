@@ -111,7 +111,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("acceptance")
+        excludeTags("acceptance", "contract")
     }
     finalizedBy(tasks.jacocoTestReport)
 }
@@ -133,6 +133,22 @@ val acceptanceTest by tasks.registering(Test::class) {
     }
     systemProperty("spring.profiles.active", "acceptance")
     dependsOn(copyContracts)
+}
+
+val karateContractTest by tasks.registering(Test::class) {
+    description = "Runs Karate contract verification tests — verifies this provider satisfies all consumer contracts"
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("contract")
+    }
+    systemProperty("spring.profiles.active", "acceptance")
+    dependsOn(copyContracts)
+    // Both runners boot against the same content_service schema and call
+    // flyway.clean() in @BeforeAll — serialize them so a parallel Gradle
+    // invocation can't race on the schema.
+    mustRunAfter(acceptanceTest)
 }
 
 tasks.withType<JavaCompile> {

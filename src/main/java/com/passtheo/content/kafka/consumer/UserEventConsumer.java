@@ -120,6 +120,9 @@ public class UserEventConsumer {
 
             } else if ("UserExamDateCleared".equals(eventType)) {
                 handleExamDateCleared(payload, record);
+
+            } else if ("UserProductChanged".equals(eventType)) {
+                handleProductChanged(payload, record);
             }
 
             ack.acknowledge();
@@ -135,8 +138,6 @@ public class UserEventConsumer {
                 ? payload.get("tenantId").asText(null) : null;
         String productCode = payload.has("productCode")
                 ? payload.get("productCode").asText(null) : null;
-        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
-                ? payload.get("examDate").asText(null) : null;
 
         if (keycloakUserIdStr == null || tenantIdStr == null
                 || productCode == null || productCode.isBlank()) {
@@ -146,7 +147,7 @@ public class UserEventConsumer {
 
         UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
         UUID tenantId = UUID.fromString(tenantIdStr);
-        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+        LocalDate examDate = parseLocalDateNode(payload.get("examDate"));
 
         boolean hasActivePlan = planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
                 keycloakUserId, productCode, PlanStatus.ACTIVE).isPresent();
@@ -174,8 +175,6 @@ public class UserEventConsumer {
                 ? payload.get("tenantId").asText(null) : null;
         String productCode = payload.has("productCode")
                 ? payload.get("productCode").asText(null) : null;
-        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
-                ? payload.get("examDate").asText(null) : null;
 
         if (keycloakUserIdStr == null || tenantIdStr == null
                 || productCode == null || productCode.isBlank()) {
@@ -185,7 +184,7 @@ public class UserEventConsumer {
 
         UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
         UUID tenantId = UUID.fromString(tenantIdStr);
-        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+        LocalDate examDate = parseLocalDateNode(payload.get("examDate"));
 
         LOG.info("Regenerating study plan for exam date change: userId={}, productCode={}, examDate={}",
                 keycloakUserId, productCode, examDate);
@@ -223,6 +222,66 @@ public class UserEventConsumer {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    private void handleProductChanged(JsonNode payload, ConsumerRecord<String, String> record) {
+        String keycloakUserIdStr = payload.has("keycloakUserId")
+                ? payload.get("keycloakUserId").asText(null) : null;
+        String tenantIdStr = payload.has("tenantId")
+                ? payload.get("tenantId").asText(null) : null;
+        String oldProductCode = payload.has("oldProductCode")
+                ? payload.get("oldProductCode").asText(null) : null;
+        String newProductCode = payload.has("newProductCode")
+                ? payload.get("newProductCode").asText(null) : null;
+        if (keycloakUserIdStr == null || tenantIdStr == null
+                || oldProductCode == null || oldProductCode.isBlank()
+                || newProductCode == null || newProductCode.isBlank()) {
+            LOG.warn("Ignoring incomplete UserProductChanged event: offset={}", record.offset());
+            return;
+        }
+
+        UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
+        UUID tenantId = UUID.fromString(tenantIdStr);
+        LocalDate examDate = parseLocalDateNode(payload.get("examDate"));
+
+        LOG.info("Product changed: userId={}, old={}, new={}, examDate={}",
+                keycloakUserId, oldProductCode, newProductCode, examDate);
+
+        TenantContext.set(tenantId);
+        try {
+            studyPlanService.abandonActivePlan(keycloakUserId, oldProductCode);
+            if (examDate != null) {
+                studyPlanService.generatePlan(keycloakUserId,
+                        new GenerateStudyPlanRequest(newProductCode, examDate, null), DEFAULT_LOCALE);
+            } else {
+                LOG.info("No exam date on new product — plan will be generated when user sets one: "
+                        + "userId={}, newProductCode={}", keycloakUserId, newProductCode);
+            }
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Parses a LocalDate from a JSON node, tolerating both the ISO string format
+     * (e.g. {@code "2026-05-01"}) and the legacy Jackson timestamp-array format
+     * (e.g. {@code [2026, 5, 1]}) that older OutboxEventPublisher versions
+     * emitted before {@code WRITE_DATES_AS_TIMESTAMPS=false} was applied. Any
+     * pending outbox rows written under the old format must still deserialize
+     * correctly when the poller replays them.
+     *
+     * @param node the JSON node (may be null or a null node)
+     * @return the parsed LocalDate, or null if the node is absent / null / empty
+     */
+    private static LocalDate parseLocalDateNode(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isArray() && node.size() == 3) {
+            return LocalDate.of(node.get(0).asInt(), node.get(1).asInt(), node.get(2).asInt());
+        }
+        String text = node.asText(null);
+        return (text == null || text.isEmpty()) ? null : LocalDate.parse(text);
     }
 
     private void deleteAllUserData(UUID userId) {
