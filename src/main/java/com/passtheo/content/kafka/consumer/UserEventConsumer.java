@@ -120,6 +120,9 @@ public class UserEventConsumer {
 
             } else if ("UserExamDateCleared".equals(eventType)) {
                 handleExamDateCleared(payload, record);
+
+            } else if ("UserProductChanged".equals(eventType)) {
+                handleProductChanged(payload, record);
             }
 
             ack.acknowledge();
@@ -220,6 +223,47 @@ public class UserEventConsumer {
         TenantContext.set(tenantId);
         try {
             studyPlanService.abandonActivePlan(keycloakUserId, productCode);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private void handleProductChanged(JsonNode payload, ConsumerRecord<String, String> record) {
+        String keycloakUserIdStr = payload.has("keycloakUserId")
+                ? payload.get("keycloakUserId").asText(null) : null;
+        String tenantIdStr = payload.has("tenantId")
+                ? payload.get("tenantId").asText(null) : null;
+        String oldProductCode = payload.has("oldProductCode")
+                ? payload.get("oldProductCode").asText(null) : null;
+        String newProductCode = payload.has("newProductCode")
+                ? payload.get("newProductCode").asText(null) : null;
+        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
+                ? payload.get("examDate").asText(null) : null;
+
+        if (keycloakUserIdStr == null || tenantIdStr == null
+                || oldProductCode == null || oldProductCode.isBlank()
+                || newProductCode == null || newProductCode.isBlank()) {
+            LOG.warn("Ignoring incomplete UserProductChanged event: offset={}", record.offset());
+            return;
+        }
+
+        UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
+        UUID tenantId = UUID.fromString(tenantIdStr);
+        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+
+        LOG.info("Product changed: userId={}, old={}, new={}, examDate={}",
+                keycloakUserId, oldProductCode, newProductCode, examDate);
+
+        TenantContext.set(tenantId);
+        try {
+            studyPlanService.abandonActivePlan(keycloakUserId, oldProductCode);
+            if (examDate != null) {
+                studyPlanService.generatePlan(keycloakUserId,
+                        new GenerateStudyPlanRequest(newProductCode, examDate, null), DEFAULT_LOCALE);
+            } else {
+                LOG.info("No exam date on new product — plan will be generated when user sets one: "
+                        + "userId={}, newProductCode={}", keycloakUserId, newProductCode);
+            }
         } finally {
             TenantContext.clear();
         }

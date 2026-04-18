@@ -4,6 +4,9 @@ function fn() {
   var now = new Date();
   now.setDate(now.getDate() + 30);
   var futureDate = now.toISOString().split('T')[0];
+  var far = new Date();
+  far.setDate(far.getDate() + 60);
+  var farFutureDate = far.toISOString().split('T')[0];
 
   var config = {
     baseUrl: baseUrl,
@@ -12,6 +15,7 @@ function fn() {
     userWithoutExamDate: '22222222-2222-2222-2222-222222222222',
     learnerRole: 'LEARNER',
     futureDate: futureDate,
+    farFutureDate: farFutureDate,
     freeToken: 'test-bearer-free-user',
     paidToken: 'test-bearer-paid-user',
     freshToken: 'test-bearer-fresh-user'

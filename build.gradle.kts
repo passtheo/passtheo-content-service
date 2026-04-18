@@ -135,6 +135,18 @@ val acceptanceTest by tasks.registering(Test::class) {
     dependsOn(copyContracts)
 }
 
+val karateContractTest by tasks.registering(Test::class) {
+    description = "Runs Karate contract verification tests — verifies this provider satisfies all consumer contracts"
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("contract")
+    }
+    systemProperty("spring.profiles.active", "acceptance")
+    dependsOn(copyContracts)
+}
+
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
