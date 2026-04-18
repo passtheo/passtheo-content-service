@@ -132,6 +132,32 @@ class UserEventConsumerTest {
     }
 
     @Test
+    void onUserProductChanged_examDateInLegacyArrayFormat_isParsedCorrectly() {
+        // Verifies backward compat with outbox rows written before
+        // WRITE_DATES_AS_TIMESTAMPS=false was applied to OutboxEventPublisher.
+        String payload = """
+                {
+                  "eventType": "UserProductChanged",
+                  "tenantId": "%s",
+                  "keycloakUserId": "%s",
+                  "oldProductCode": "auto-b",
+                  "newProductCode": "motor-a",
+                  "examDate": [2026, 9, 1]
+                }
+                """.formatted(TENANT_ID, USER_ID);
+        ConsumerRecord<String, String> record = kafkaRecord(payload);
+
+        consumer.onUserEvent(record, ack);
+
+        verify(studyPlanService).abandonActivePlan(USER_ID, "auto-b");
+        ArgumentCaptor<GenerateStudyPlanRequest> requestCaptor =
+                ArgumentCaptor.forClass(GenerateStudyPlanRequest.class);
+        verify(studyPlanService).generatePlan(eq(USER_ID), requestCaptor.capture(), eq("nl"));
+        assertThat(requestCaptor.getValue().examDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        verify(ack).acknowledge();
+    }
+
+    @Test
     void onUserProductChanged_exceptionInService_isSwallowed() {
         String payload = """
                 {

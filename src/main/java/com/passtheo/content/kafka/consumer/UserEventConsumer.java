@@ -138,8 +138,6 @@ public class UserEventConsumer {
                 ? payload.get("tenantId").asText(null) : null;
         String productCode = payload.has("productCode")
                 ? payload.get("productCode").asText(null) : null;
-        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
-                ? payload.get("examDate").asText(null) : null;
 
         if (keycloakUserIdStr == null || tenantIdStr == null
                 || productCode == null || productCode.isBlank()) {
@@ -149,7 +147,7 @@ public class UserEventConsumer {
 
         UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
         UUID tenantId = UUID.fromString(tenantIdStr);
-        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+        LocalDate examDate = parseLocalDateNode(payload.get("examDate"));
 
         boolean hasActivePlan = planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
                 keycloakUserId, productCode, PlanStatus.ACTIVE).isPresent();
@@ -177,8 +175,6 @@ public class UserEventConsumer {
                 ? payload.get("tenantId").asText(null) : null;
         String productCode = payload.has("productCode")
                 ? payload.get("productCode").asText(null) : null;
-        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
-                ? payload.get("examDate").asText(null) : null;
 
         if (keycloakUserIdStr == null || tenantIdStr == null
                 || productCode == null || productCode.isBlank()) {
@@ -188,7 +184,7 @@ public class UserEventConsumer {
 
         UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
         UUID tenantId = UUID.fromString(tenantIdStr);
-        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+        LocalDate examDate = parseLocalDateNode(payload.get("examDate"));
 
         LOG.info("Regenerating study plan for exam date change: userId={}, productCode={}, examDate={}",
                 keycloakUserId, productCode, examDate);
@@ -237,9 +233,6 @@ public class UserEventConsumer {
                 ? payload.get("oldProductCode").asText(null) : null;
         String newProductCode = payload.has("newProductCode")
                 ? payload.get("newProductCode").asText(null) : null;
-        String examDateStr = payload.has("examDate") && !payload.get("examDate").isNull()
-                ? payload.get("examDate").asText(null) : null;
-
         if (keycloakUserIdStr == null || tenantIdStr == null
                 || oldProductCode == null || oldProductCode.isBlank()
                 || newProductCode == null || newProductCode.isBlank()) {
@@ -249,7 +242,7 @@ public class UserEventConsumer {
 
         UUID keycloakUserId = UUID.fromString(keycloakUserIdStr);
         UUID tenantId = UUID.fromString(tenantIdStr);
-        LocalDate examDate = examDateStr != null ? LocalDate.parse(examDateStr) : null;
+        LocalDate examDate = parseLocalDateNode(payload.get("examDate"));
 
         LOG.info("Product changed: userId={}, old={}, new={}, examDate={}",
                 keycloakUserId, oldProductCode, newProductCode, examDate);
@@ -267,6 +260,28 @@ public class UserEventConsumer {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * Parses a LocalDate from a JSON node, tolerating both the ISO string format
+     * (e.g. {@code "2026-05-01"}) and the legacy Jackson timestamp-array format
+     * (e.g. {@code [2026, 5, 1]}) that older OutboxEventPublisher versions
+     * emitted before {@code WRITE_DATES_AS_TIMESTAMPS=false} was applied. Any
+     * pending outbox rows written under the old format must still deserialize
+     * correctly when the poller replays them.
+     *
+     * @param node the JSON node (may be null or a null node)
+     * @return the parsed LocalDate, or null if the node is absent / null / empty
+     */
+    private static LocalDate parseLocalDateNode(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isArray() && node.size() == 3) {
+            return LocalDate.of(node.get(0).asInt(), node.get(1).asInt(), node.get(2).asInt());
+        }
+        String text = node.asText(null);
+        return (text == null || text.isEmpty()) ? null : LocalDate.parse(text);
     }
 
     private void deleteAllUserData(UUID userId) {

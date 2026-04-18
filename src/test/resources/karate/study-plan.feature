@@ -56,21 +56,25 @@ Feature: Study plan generation with exam date fallback
     * header X-Tenant-ID = tenantId
     * header X-Keycloak-User-ID = userId
     * header X-User-Roles = learnerRole
-    # Capture the currently active plan (or 404 if none)
+    # Establish a baseline plan so we can prove the preview call leaves it untouched.
     Given path '/api/study-plan'
-    And param productCode = 'auto-b'
-    When method get
-    * def beforeStatus = responseStatus
-    * def beforePlanId = beforeStatus == 200 ? response.data.planId : null
+    And request { productCode: 'auto-b', examDate: '#(futureDate)', dailyQuestionTarget: 20 }
+    When method post
+    Then status 200
+    * def baselinePlanId = response.data.planId
+    * def baselineExamDate = response.data.examDate
     # Call preview with a different exam date
     Given path '/api/study-plan/preview'
     And request { productCode: 'auto-b', examDate: '#(farFutureDate)' }
     When method post
     Then status 200
     And match response.data.status == 'PREVIEW'
-    # The active plan should be unchanged
+    And match response.data.planId == '#null'
+    # The active plan must be unchanged
     Given path '/api/study-plan'
     And param productCode = 'auto-b'
     When method get
-    Then status == beforeStatus
-    * if (beforeStatus == 200) karate.match(response.data.planId, beforePlanId)
+    Then status 200
+    And match response.data.planId == baselinePlanId
+    And match response.data.examDate == baselineExamDate
+    And match response.data.status == 'ACTIVE'
