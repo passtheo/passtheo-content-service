@@ -19,7 +19,9 @@ import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
 import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.content.service.ReadinessService;
+import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.dto.ApiResponse;
+import com.passtheo.shared.security.util.SecurityUtils;
 import jakarta.annotation.Nonnull;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -278,47 +280,60 @@ public class ContentController {
      * <p>Premium lessons are returned with stripped content for free-tier users:
      * {@code title}, {@code slug}, {@code readTimeMinutes}, and {@code isPremium=true}
      * are preserved; {@code sections}, {@code summary}, {@code coverImage}, and
-     * {@code videoUrl} are removed. The UI shows a lock and opens the upgrade paywall.
+     * {@code videoUrl} are removed, and {@code locked=true}. The UI shows a lock and
+     * opens the upgrade paywall.
      *
-     * @param tenantId  tenant ID from header
-     * @param userId    user ID from header
+     * <p>Tenant and user are read from {@link TenantContext} (populated by
+     * {@code TenantFilter}) and {@link SecurityUtils} (populated from the JWT
+     * {@code sub} claim) rather than raw request headers — premium gating is a
+     * security decision and must not be spoofable via forged headers.
+     *
      * @param topicCode the topic code
      * @param locale    content locale
      * @return list of lessons
      */
     @GetMapping("/lessons/{topicCode}")
     public ResponseEntity<ApiResponse<List<LessonDto>>> listLessonsByTopic(
-            @RequestHeader("X-Tenant-ID") UUID tenantId,
-            @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        boolean isPaid = entitlementChecker.getAccess(tenantId, userId).isPaid();
+        boolean isPaid = resolveIsPaid();
         return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale, isPaid), MDC.get("traceId")));
     }
 
     /**
-     * Lists lessons for a topic. See {@link #listLessonsByTopic} for premium-gating behavior.
+     * Lists lessons for a topic (hierarchical endpoint). See
+     * {@link #listLessonsByTopic} for premium-gating behavior. The path-level
+     * {@code countryCode}/{@code productTypeCode}/{@code productCode} are
+     * consumed only for routing — lesson lookup keys on {@code topicCode}.
      *
-     * @param tenantId        tenant ID from header
-     * @param userId          user ID from header
-     * @param countryCode     country code from path (ignored for lesson lookup — routing only)
-     * @param productTypeCode product type code from path (ignored for lesson lookup — routing only)
-     * @param productCode     product code from path (ignored for lesson lookup — routing only)
+     * @param countryCode     country code from path (routing only)
+     * @param productTypeCode product type code from path (routing only)
+     * @param productCode     product code from path (routing only)
      * @param topicCode       the topic code
      * @param locale          content locale
      * @return list of lessons
      */
     @GetMapping("/{countryCode}/{productTypeCode}/{productCode}/lessons/{topicCode}")
     public ResponseEntity<ApiResponse<List<LessonDto>>> listLessons(
-            @RequestHeader("X-Tenant-ID") UUID tenantId,
-            @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @PathVariable String countryCode,
             @PathVariable String productTypeCode,
             @PathVariable String productCode,
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        boolean isPaid = entitlementChecker.getAccess(tenantId, userId).isPaid();
+        boolean isPaid = resolveIsPaid();
         return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale, isPaid), MDC.get("traceId")));
+    }
+
+    private boolean resolveIsPaid() {
+        UUID tenantId = TenantContext.get();
+        UUID userId = SecurityUtils.extractKeycloakUserId();
+        if (tenantId == null || userId == null) {
+            // No authenticated user — treat as free-tier (safe default; premium
+            // content gets stripped). Logging only at debug to avoid noise.
+            LOG.debug("Premium-gate resolveIsPaid called without tenant+user context — defaulting free");
+            return false;
+        }
+        return entitlementChecker.getAccess(tenantId, userId).isPaid();
     }
 
     /**

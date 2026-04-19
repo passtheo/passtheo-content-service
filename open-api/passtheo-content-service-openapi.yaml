@@ -1681,6 +1681,13 @@ components:
         has stripped `sections`, `summary`, `coverImage`, and `videoUrl` and the
         client must render a paywall on tap. Paid users receive `locked: false`
         with full content regardless of `isPremium`.
+      required:
+        - title
+        - slug
+        - sections
+        - readTimeMinutes
+        - isPremium
+        - locked
       properties:
         title: { type: string }
         slug: { type: string }
