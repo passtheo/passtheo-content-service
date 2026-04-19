@@ -216,6 +216,8 @@ public class StudyPlanService {
                 long remaining = Math.max(totalQuestions - clampedMastered, 0);
                 resolvedDailyTarget = (int) Math.min(50, Math.max(5,
                         (long) Math.ceil((double) remaining / daysUntilExam)));
+                LOG.info("Study plan inputs: totalQuestions={}, mastered={}, remaining={}, daysUntilExam={}, dailyQuestionTarget={}",
+                        totalQuestions, mastered, remaining, daysUntilExam, resolvedDailyTarget);
             } else {
                 resolvedDailyTarget = 20;
             }
