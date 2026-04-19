@@ -19,7 +19,9 @@ import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.OnboardingCatalogService;
 import com.passtheo.content.service.PracticeSessionService;
 import com.passtheo.content.service.ReadinessService;
+import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.dto.ApiResponse;
+import com.passtheo.shared.security.util.SecurityUtils;
 import jakarta.annotation.Nonnull;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -275,6 +277,17 @@ public class ContentController {
     /**
      * Lists lessons for a topic (flat endpoint — no country/product hierarchy required).
      *
+     * <p>Premium lessons are returned with stripped content for free-tier users:
+     * {@code title}, {@code slug}, {@code readTimeMinutes}, and {@code isPremium=true}
+     * are preserved; {@code sections}, {@code summary}, {@code coverImage}, and
+     * {@code videoUrl} are removed, and {@code locked=true}. The UI shows a lock and
+     * opens the upgrade paywall.
+     *
+     * <p>Tenant and user are read from {@link TenantContext} (populated by
+     * {@code TenantFilter}) and {@link SecurityUtils} (populated from the JWT
+     * {@code sub} claim) rather than raw request headers — premium gating is a
+     * security decision and must not be spoofable via forged headers.
+     *
      * @param topicCode the topic code
      * @param locale    content locale
      * @return list of lessons
@@ -283,14 +296,21 @@ public class ContentController {
     public ResponseEntity<ApiResponse<List<LessonDto>>> listLessonsByTopic(
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+        boolean isPaid = resolveIsPaid();
+        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale, isPaid), MDC.get("traceId")));
     }
 
     /**
-     * Lists lessons for a topic.
+     * Lists lessons for a topic (hierarchical endpoint). See
+     * {@link #listLessonsByTopic} for premium-gating behavior. The path-level
+     * {@code countryCode}/{@code productTypeCode}/{@code productCode} are
+     * consumed only for routing — lesson lookup keys on {@code topicCode}.
      *
-     * @param topicCode the topic code
-     * @param locale    content locale
+     * @param countryCode     country code from path (routing only)
+     * @param productTypeCode product type code from path (routing only)
+     * @param productCode     product code from path (routing only)
+     * @param topicCode       the topic code
+     * @param locale          content locale
      * @return list of lessons
      */
     @GetMapping("/{countryCode}/{productTypeCode}/{productCode}/lessons/{topicCode}")
@@ -300,7 +320,20 @@ public class ContentController {
             @PathVariable String productCode,
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+        boolean isPaid = resolveIsPaid();
+        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale, isPaid), MDC.get("traceId")));
+    }
+
+    private boolean resolveIsPaid() {
+        UUID tenantId = TenantContext.get();
+        UUID userId = SecurityUtils.extractKeycloakUserId();
+        if (tenantId == null || userId == null) {
+            // No authenticated user — treat as free-tier (safe default; premium
+            // content gets stripped). Logging only at debug to avoid noise.
+            LOG.debug("Premium-gate resolveIsPaid called without tenant+user context — defaulting free");
+            return false;
+        }
+        return entitlementChecker.getAccess(tenantId, userId).isPaid();
     }
 
     /**
@@ -321,17 +354,31 @@ public class ContentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(null, MDC.get("traceId")));
     }
 
-    private List<LessonDto> buildLessonDtos(@Nonnull String topicCode, @Nonnull String locale) {
+    private List<LessonDto> buildLessonDtos(@Nonnull String topicCode, @Nonnull String locale, boolean isPaid) {
         return strapiContentCache.getLessons(topicCode, locale).stream()
-                .map(l -> new LessonDto(
-                        l.title(), l.slug(),
-                        l.sections() != null ? l.sections().stream()
-                                .filter(Objects::nonNull)
-                                .map(s -> new LessonSectionDto(
-                                        s.heading(), s.body(), s.tip(),
-                                        s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
-                                .toList() : List.of(),
-                        l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes()))
+                .map(l -> {
+                    boolean locked = l.isPremium() && !isPaid;
+                    if (locked) {
+                        return new LessonDto(
+                                l.title(), l.slug(),
+                                List.of(),
+                                null, null, null,
+                                l.readTimeMinutes(),
+                                true,
+                                true);
+                    }
+                    return new LessonDto(
+                            l.title(), l.slug(),
+                            l.sections() != null ? l.sections().stream()
+                                    .filter(Objects::nonNull)
+                                    .map(s -> new LessonSectionDto(
+                                            s.heading(), s.body(), s.tip(),
+                                            s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
+                                    .toList() : List.of(),
+                            l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes(),
+                            l.isPremium(),
+                            false);
+                })
                 .toList();
     }
 }

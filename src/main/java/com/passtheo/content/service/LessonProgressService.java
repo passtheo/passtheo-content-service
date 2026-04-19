@@ -12,6 +12,7 @@ import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiLessonDto;
 import com.passtheo.content.repository.LessonProgressRepository;
 import com.passtheo.shared.core.context.TenantContext;
+import com.passtheo.shared.core.exception.AccessDeniedException;
 import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.core.exception.ErrorCode;
 import com.passtheo.shared.events.config.KafkaTopic;
@@ -56,6 +57,7 @@ public class LessonProgressService {
     private final AchievementService achievementService;
     private final OutboxEventRepository outboxEventRepository;
     private final StrapiContentCache strapiContentCache;
+    private final EntitlementChecker entitlementChecker;
     private final ObjectMapper objectMapper;
 
     /**
@@ -66,6 +68,7 @@ public class LessonProgressService {
      * @param achievementService       achievement service
      * @param outboxEventRepository    outbox event repository
      * @param strapiContentCache       Strapi content cache (for lesson validation)
+     * @param entitlementChecker       access grant lookup (for premium lesson gate)
      * @param objectMapper             JSON object mapper (Spring-configured with JavaTimeModule)
      */
     public LessonProgressService(LessonProgressRepository lessonProgressRepository,
@@ -73,12 +76,14 @@ public class LessonProgressService {
                                  AchievementService achievementService,
                                  OutboxEventRepository outboxEventRepository,
                                  StrapiContentCache strapiContentCache,
+                                 EntitlementChecker entitlementChecker,
                                  ObjectMapper objectMapper) {
         this.lessonProgressRepository = lessonProgressRepository;
         this.xpService = xpService;
         this.achievementService = achievementService;
         this.outboxEventRepository = outboxEventRepository;
         this.strapiContentCache = strapiContentCache;
+        this.entitlementChecker = entitlementChecker;
         this.objectMapper = objectMapper;
     }
 
@@ -102,7 +107,10 @@ public class LessonProgressService {
                                                  @Nonnull String productCode,
                                                  @Nonnull String topicCode,
                                                  int timeSpentSeconds) {
-        validateLessonExists(topicCode, lessonSlug);
+        StrapiLessonDto lesson = resolveLesson(topicCode, lessonSlug);
+        if (lesson.isPremium() && !entitlementChecker.getAccess(TenantContext.get(), userId).isPaid()) {
+            throw new AccessDeniedException("Premium subscription required to complete this lesson");
+        }
 
         Optional<LessonProgress> existing = lessonProgressRepository
                 .findByKeycloakUserIdAndProductCodeAndLessonSlug(userId, productCode, lessonSlug);
@@ -211,12 +219,17 @@ public class LessonProgressService {
                 .toList();
     }
 
-    private void validateLessonExists(String topicCode, String lessonSlug) {
+    private StrapiLessonDto resolveLesson(String topicCode, String lessonSlug) {
         List<StrapiLessonDto> lessons = strapiContentCache.getLessons(topicCode, CANONICAL_LOCALE);
-        if (lessons == null || lessons.stream().noneMatch(l -> lessonSlug.equals(l.slug()))) {
-            throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
-                    "Lesson not found: topicCode=" + topicCode + ", lessonSlug=" + lessonSlug);
+        if (lessons != null) {
+            for (StrapiLessonDto l : lessons) {
+                if (lessonSlug.equals(l.slug())) {
+                    return l;
+                }
+            }
         }
+        throw new AppException(HttpStatus.NOT_FOUND, ErrorCode.VALIDATION_ERROR,
+                "Lesson not found: topicCode=" + topicCode + ", lessonSlug=" + lessonSlug);
     }
 
     private void publishLessonCompletedEvent(UUID tenantId, UUID userId,

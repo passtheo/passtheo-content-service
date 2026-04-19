@@ -108,6 +108,39 @@ Feature: Content Hierarchy Browsing
     Then status 200
     And match response.data == '#[]'
 
+  # ─── LESSON PREMIUM GATE (P0.5) ───
+
+  # Seeded Strapi fixture invariant: 'verbodsborden' contains at least one
+  # premium lesson AND at least one non-premium lesson — required so the
+  # free-tier scenario below can exercise both branches of the strip logic.
+  # If a future reseed of Strapi breaks this invariant, add a @Seed step
+  # that POSTs a known-premium lesson via Strapi admin before the scenario.
+
+  Scenario: Paid user sees full content on every lesson regardless of isPremium
+    Given path '/api/content/lessons/verbodsborden'
+    And headers paidHeaders
+    When method GET
+    Then status 200
+    And match response.success == true
+    # Schema invariant — all lessons expose the two flags
+    And match each response.data contains { isPremium: '#boolean', locked: '#boolean' }
+    # Paid users are never locked
+    And match each response.data contains { locked: false }
+
+  Scenario: Free user sees locked lessons with stripped content when premium
+    Given path '/api/content/lessons/verbodsborden'
+    And headers freeHeaders
+    When method GET
+    Then status 200
+    And match response.success == true
+    # Schema invariant — all lessons expose the two flags
+    And match each response.data contains { isPremium: '#boolean', locked: '#boolean' }
+    # Seed fixture must contain at least one premium lesson — assert, don't skip.
+    * def lockedLessons = response.data.findAll(function(l){ return l.locked == true })
+    And assert lockedLessons.length >= 1
+    # Every locked lesson has stripped content
+    And match each lockedLessons contains { sections: '#[0]', summary: '##null', coverImage: '##null', videoUrl: '##null' }
+
   Scenario: Content supports locale parameter
     Given path '/api/content/NL/cbr/auto-b/domains'
     And headers paidHeaders
