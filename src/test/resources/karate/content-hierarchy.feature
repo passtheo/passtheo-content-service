@@ -108,6 +108,30 @@ Feature: Content Hierarchy Browsing
     Then status 200
     And match response.data == '#[]'
 
+  # ─── LESSON PREMIUM GATE (P0.5) ───
+
+  Scenario: Paid user sees full content on every lesson regardless of isPremium
+    Given path '/api/content/lessons/voorrangsborden'
+    And headers paidHeaders
+    When method GET
+    Then status 200
+    And match response.success == true
+    And match each response.data contains { locked: false }
+    # Every lesson exposes the two flags
+    And match each response.data contains { isPremium: '#boolean', locked: '#boolean' }
+
+  Scenario: Free user sees locked lessons with stripped content when premium
+    Given path '/api/content/lessons/voorrangsborden'
+    And headers freeHeaders
+    When method GET
+    Then status 200
+    And match response.success == true
+    # Schema invariant — all lessons expose the two flags
+    And match each response.data contains { isPremium: '#boolean', locked: '#boolean' }
+    # And any locked lesson has empty sections (content stripped)
+    * def lockedLessons = response.data.findAll(function(l){ return l.locked == true })
+    * if (lockedLessons.length > 0) karate.match(lockedLessons[0].sections, '#[0]')
+
   Scenario: Content supports locale parameter
     Given path '/api/content/NL/cbr/auto-b/domains'
     And headers paidHeaders

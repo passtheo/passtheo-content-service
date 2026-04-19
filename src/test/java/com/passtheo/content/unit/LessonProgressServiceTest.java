@@ -9,9 +9,12 @@ import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiLessonDto;
 import com.passtheo.content.repository.LessonProgressRepository;
 import com.passtheo.content.service.AchievementService;
+import com.passtheo.content.service.EntitlementChecker;
 import com.passtheo.content.service.LessonProgressService;
 import com.passtheo.content.service.XpService;
 import com.passtheo.shared.core.context.TenantContext;
+import com.passtheo.shared.core.dto.AccessGrant;
+import com.passtheo.shared.core.exception.AccessDeniedException;
 import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.outbox.entity.OutboxEvent;
 import com.passtheo.shared.outbox.repository.OutboxEventRepository;
@@ -53,6 +56,7 @@ class LessonProgressServiceTest {
     @Mock private AchievementService achievementService;
     @Mock private OutboxEventRepository outboxEventRepository;
     @Mock private StrapiContentCache strapiContentCache;
+    @Mock private EntitlementChecker entitlementChecker;
 
     private LessonProgressService service;
 
@@ -64,15 +68,18 @@ class LessonProgressServiceTest {
                         .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         service = new LessonProgressService(
                 lessonProgressRepository, xpService, achievementService, outboxEventRepository,
-                strapiContentCache, realMapper);
+                strapiContentCache, entitlementChecker, realMapper);
 
-        // Default: every lesson slug is valid. Tests that need to assert invalid
-        // slugs override this stub. Lenient because some tests (e.g., getProgress
-        // queries) don't exercise the validation path.
+        // Default: every lesson slug is valid and non-premium. Tests that need different
+        // content override this stub. Lenient because some tests (getProgress, uncomplete)
+        // don't exercise the validation path.
         lenient().when(strapiContentCache.getLessons(any(), any()))
                 .thenReturn(List.of(
                         new StrapiLessonDto(1, "doc-1", "Voorrangsbord uitleg", SLUG,
                                 List.of(), null, null, null, 0, true, false, 0)));
+        // Default: paid access. Premium-gate tests override with AccessGrant.free().
+        lenient().when(entitlementChecker.getAccess(any(), any()))
+                .thenReturn(new AccessGrant(true, "MONTH_1", "ACTIVE", null));
     }
 
     @AfterEach
@@ -90,6 +97,39 @@ class LessonProgressServiceTest {
                 .hasMessageContaining("Lesson not found");
 
         verifyNoInteractions(lessonProgressRepository, xpService, achievementService, outboxEventRepository);
+    }
+
+    @Test
+    void completeLesson_premiumLessonWithFreeTier_throws403() {
+        when(strapiContentCache.getLessons(TOPIC, "nl")).thenReturn(List.of(
+                new StrapiLessonDto(2, "doc-2", "Premium lesson", SLUG,
+                        List.of(), null, null, null, 0, true, true, 0)));
+        when(entitlementChecker.getAccess(TENANT_ID, USER_ID)).thenReturn(AccessGrant.free());
+
+        assertThatThrownBy(() ->
+                service.completeLesson(USER_ID, SLUG, PRODUCT, TOPIC, 60))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Premium subscription required");
+
+        verifyNoInteractions(lessonProgressRepository, xpService, achievementService, outboxEventRepository);
+    }
+
+    @Test
+    void completeLesson_premiumLessonWithPaidTier_succeeds() {
+        when(strapiContentCache.getLessons(TOPIC, "nl")).thenReturn(List.of(
+                new StrapiLessonDto(2, "doc-2", "Premium lesson", SLUG,
+                        List.of(), null, null, null, 0, true, true, 0)));
+        when(lessonProgressRepository.findByKeycloakUserIdAndProductCodeAndLessonSlug(USER_ID, PRODUCT, SLUG))
+                .thenReturn(Optional.empty());
+        when(achievementService.checkAchievements(USER_ID, PRODUCT)).thenReturn(List.of());
+        when(xpService.grantXp(eq(USER_ID), eq(PRODUCT), anyInt()))
+                .thenReturn(new XpResult(20, 20, 1, 100, false, 1));
+
+        LessonCompleteResponse response = service.completeLesson(USER_ID, SLUG, PRODUCT, TOPIC, 90);
+
+        assertThat(response.isCompleted()).isTrue();
+        assertThat(response.xpUpdate().xpEarned()).isEqualTo(20);
+        verify(lessonProgressRepository).save(any());
     }
 
     @Test

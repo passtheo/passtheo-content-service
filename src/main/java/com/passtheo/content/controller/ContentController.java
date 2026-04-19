@@ -275,32 +275,50 @@ public class ContentController {
     /**
      * Lists lessons for a topic (flat endpoint — no country/product hierarchy required).
      *
+     * <p>Premium lessons are returned with stripped content for free-tier users:
+     * {@code title}, {@code slug}, {@code readTimeMinutes}, and {@code isPremium=true}
+     * are preserved; {@code sections}, {@code summary}, {@code coverImage}, and
+     * {@code videoUrl} are removed. The UI shows a lock and opens the upgrade paywall.
+     *
+     * @param tenantId  tenant ID from header
+     * @param userId    user ID from header
      * @param topicCode the topic code
      * @param locale    content locale
      * @return list of lessons
      */
     @GetMapping("/lessons/{topicCode}")
     public ResponseEntity<ApiResponse<List<LessonDto>>> listLessonsByTopic(
+            @RequestHeader("X-Tenant-ID") UUID tenantId,
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+        boolean isPaid = entitlementChecker.getAccess(tenantId, userId).isPaid();
+        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale, isPaid), MDC.get("traceId")));
     }
 
     /**
-     * Lists lessons for a topic.
+     * Lists lessons for a topic. See {@link #listLessonsByTopic} for premium-gating behavior.
      *
-     * @param topicCode the topic code
-     * @param locale    content locale
+     * @param tenantId        tenant ID from header
+     * @param userId          user ID from header
+     * @param countryCode     country code from path (ignored for lesson lookup — routing only)
+     * @param productTypeCode product type code from path (ignored for lesson lookup — routing only)
+     * @param productCode     product code from path (ignored for lesson lookup — routing only)
+     * @param topicCode       the topic code
+     * @param locale          content locale
      * @return list of lessons
      */
     @GetMapping("/{countryCode}/{productTypeCode}/{productCode}/lessons/{topicCode}")
     public ResponseEntity<ApiResponse<List<LessonDto>>> listLessons(
+            @RequestHeader("X-Tenant-ID") UUID tenantId,
+            @RequestHeader("X-Keycloak-User-ID") UUID userId,
             @PathVariable String countryCode,
             @PathVariable String productTypeCode,
             @PathVariable String productCode,
             @PathVariable @Nonnull String topicCode,
             @RequestParam(defaultValue = "nl") String locale) {
-        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale), MDC.get("traceId")));
+        boolean isPaid = entitlementChecker.getAccess(tenantId, userId).isPaid();
+        return ResponseEntity.ok(ApiResponse.success(buildLessonDtos(topicCode, locale, isPaid), MDC.get("traceId")));
     }
 
     /**
@@ -321,17 +339,31 @@ public class ContentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(null, MDC.get("traceId")));
     }
 
-    private List<LessonDto> buildLessonDtos(@Nonnull String topicCode, @Nonnull String locale) {
+    private List<LessonDto> buildLessonDtos(@Nonnull String topicCode, @Nonnull String locale, boolean isPaid) {
         return strapiContentCache.getLessons(topicCode, locale).stream()
-                .map(l -> new LessonDto(
-                        l.title(), l.slug(),
-                        l.sections() != null ? l.sections().stream()
-                                .filter(Objects::nonNull)
-                                .map(s -> new LessonSectionDto(
-                                        s.heading(), s.body(), s.tip(),
-                                        s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
-                                .toList() : List.of(),
-                        l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes()))
+                .map(l -> {
+                    boolean locked = l.isPremium() && !isPaid;
+                    if (locked) {
+                        return new LessonDto(
+                                l.title(), l.slug(),
+                                List.of(),
+                                null, null, null,
+                                l.readTimeMinutes(),
+                                true,
+                                true);
+                    }
+                    return new LessonDto(
+                            l.title(), l.slug(),
+                            l.sections() != null ? l.sections().stream()
+                                    .filter(Objects::nonNull)
+                                    .map(s -> new LessonSectionDto(
+                                            s.heading(), s.body(), s.tip(),
+                                            s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
+                                    .toList() : List.of(),
+                            l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes(),
+                            l.isPremium(),
+                            false);
+                })
                 .toList();
     }
 }
