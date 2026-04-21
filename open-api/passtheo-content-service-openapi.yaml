@@ -1122,6 +1122,14 @@ paths:
       operationId: getActiveStudyPlan
       tags: [StudyPlan]
       summary: Get current active study plan
+      description: |
+        Returns the user's active study plan. The service self-heals if the
+        stored plan's `examDate` has drifted from the authoritative
+        `UserProfile.examDate` in user-service (e.g., a `UserExamDateSet`
+        event was lost): it transparently regenerates the plan and returns
+        the fresh one. If user-service is unreachable at read time, the
+        stored plan is returned unchanged — drift detection never fails
+        the request.
       security:
         - bearerAuth: []
       parameters:
@@ -1134,7 +1142,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Active study plan with today's tasks
+          description: Active study plan with today's tasks (reconciled against user-service examDate)
           content:
             application/json:
               schema:

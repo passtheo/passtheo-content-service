@@ -13,6 +13,7 @@ import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.content.repository.TopicProgressRepository;
 import com.passtheo.content.service.StudyPlanService;
+import com.passtheo.shared.core.client.UserServiceInternalClient;
 import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.events.config.KafkaTopic;
 import jakarta.annotation.Nonnull;
@@ -49,6 +50,7 @@ public class UserEventConsumer {
     private final ReadinessSnapshotRepository snapshotRepository;
     private final StudyPlanRepository planRepository;
     private final StudyPlanService studyPlanService;
+    private final UserServiceInternalClient userServiceClient;
 
     /**
      * Constructs the user event consumer.
@@ -63,6 +65,7 @@ public class UserEventConsumer {
      * @param snapshotRepository       readiness snapshot repository
      * @param planRepository           study plan repository
      * @param studyPlanService         study plan service for auto-generation
+     * @param userServiceClient        user-service client (used to evict the profile cache on exam date change)
      */
     public UserEventConsumer(ObjectMapper objectMapper,
                              QuestionProgressRepository progressRepository,
@@ -73,7 +76,8 @@ public class UserEventConsumer {
                              ExamAttemptRepository examAttemptRepository,
                              ReadinessSnapshotRepository snapshotRepository,
                              StudyPlanRepository planRepository,
-                             StudyPlanService studyPlanService) {
+                             StudyPlanService studyPlanService,
+                             UserServiceInternalClient userServiceClient) {
         this.objectMapper = objectMapper;
         this.progressRepository = progressRepository;
         this.topicProgressRepository = topicProgressRepository;
@@ -84,6 +88,7 @@ public class UserEventConsumer {
         this.snapshotRepository = snapshotRepository;
         this.planRepository = planRepository;
         this.studyPlanService = studyPlanService;
+        this.userServiceClient = userServiceClient;
     }
 
     /**
@@ -188,6 +193,10 @@ public class UserEventConsumer {
 
         LOG.info("Regenerating study plan for exam date change: userId={}, productCode={}, examDate={}",
                 keycloakUserId, productCode, examDate);
+        // Drop any stale cached profile so getActivePlan's reconciliation path and
+        // generatePlan's own fallback branch both observe the freshly-changed examDate
+        // rather than a pre-change value cached up to 5 minutes in Redis.
+        userServiceClient.evictCache(keycloakUserId, tenantId);
         TenantContext.set(tenantId);
         try {
             studyPlanService.generatePlan(keycloakUserId,

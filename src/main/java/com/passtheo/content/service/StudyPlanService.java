@@ -13,6 +13,7 @@ import com.passtheo.content.dto.request.GenerateStudyPlanRequest;
 import com.passtheo.content.dto.response.StudyPlanDayDto;
 import com.passtheo.content.dto.response.StudyPlanDto;
 import com.passtheo.shared.core.client.UserServiceInternalClient;
+import com.passtheo.shared.core.dto.InternalUserProfileDto;
 import com.passtheo.content.integration.strapi.StrapiContentCache;
 import com.passtheo.content.integration.strapi.dto.StrapiDomainDto;
 import com.passtheo.content.repository.QuestionProgressRepository;
@@ -21,6 +22,8 @@ import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.shared.core.context.TenantContext;
 import com.passtheo.shared.core.exception.AppException;
 import com.passtheo.shared.core.exception.ErrorCode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import jakarta.annotation.Nonnull;
 import org.slf4j.Logger;
@@ -37,6 +40,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -66,6 +70,7 @@ public class StudyPlanService {
     private final ObjectMapper objectMapper;
     private final UserServiceInternalClient userServiceClient;
     private final QuestionProgressRepository progressRepository;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Constructs the study plan service.
@@ -77,6 +82,7 @@ public class StudyPlanService {
      * @param objectMapper       JSON serializer
      * @param userServiceClient  user-service client for exam date fallback
      * @param progressRepository question progress repository for mastered count
+     * @param meterRegistry      Micrometer registry for drift-detection counter
      */
     public StudyPlanService(StudyPlanRepository planRepository,
                             StudyPlanDayRepository planDayRepository,
@@ -84,7 +90,8 @@ public class StudyPlanService {
                             StrapiContentCache strapiContentCache,
                             ObjectMapper objectMapper,
                             UserServiceInternalClient userServiceClient,
-                            QuestionProgressRepository progressRepository) {
+                            QuestionProgressRepository progressRepository,
+                            MeterRegistry meterRegistry) {
         this.planRepository = planRepository;
         this.planDayRepository = planDayRepository;
         this.readinessService = readinessService;
@@ -92,6 +99,7 @@ public class StudyPlanService {
         this.objectMapper = objectMapper;
         this.userServiceClient = userServiceClient;
         this.progressRepository = progressRepository;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -310,28 +318,99 @@ public class StudyPlanService {
                 });
     }
 
+    /** Default locale used when reconciliation inline-regenerates via the same path as the Kafka consumer. */
+    private static final String RECONCILE_DEFAULT_LOCALE = "nl";
+
     /**
-     * Gets the active study plan for a user/product.
+     * Gets the active study plan for a user/product, self-healing on
+     * {@code examDate} drift.
+     *
+     * <p>The user-service owns the authoritative exam date via
+     * {@code UserProfile.examDate}. When that value changes, the Kafka
+     * pipeline ({@code UserExamDateSet} → {@code UserEventConsumer} →
+     * {@link #generatePlan}) is expected to regenerate the plan. If that
+     * pipeline silently fails (consumer exception without ack, Strapi/
+     * readiness unreachable, productCode mismatch, seeded fixture data),
+     * the stored plan's {@code examDate} will diverge from the profile.
+     *
+     * <p>This method reconciles on read: if the stored {@code examDate}
+     * differs from the profile's non-null {@code examDate}, it logs a
+     * WARN, increments the {@code passtheo_study_plan_drift_detected_total}
+     * counter, and regenerates the plan inline via the same
+     * {@link #generatePlan} path the Kafka consumer uses. The request
+     * then returns the freshly-regenerated plan.
+     *
+     * <p>If user-service is unreachable or returns a profile with a null
+     * examDate, the stored plan is returned unchanged — drift detection
+     * must never fail the request.
+     *
+     * <p>This method is intentionally not {@code @Transactional}: it
+     * orchestrates one read ({@link #loadActivePlan}), an HTTP call, an
+     * optional write ({@link #generatePlan}, which carries its own
+     * write transaction), and a final read ({@link #loadActivePlanWithDays}).
+     * Mixing a readOnly outer transaction with the inner write is a
+     * deliberate anti-pattern we avoid here.
      *
      * @param userId      the user's Keycloak ID
      * @param productCode the product code
-     * @return the active plan, or throws if none
+     * @return the active plan (reconciled when drift detected)
      */
-    @Transactional(readOnly = true)
     public StudyPlanDto getActivePlan(@Nonnull UUID userId, @Nonnull String productCode) {
-        StudyPlan plan = planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+        StudyPlan plan = loadActivePlan(userId, productCode);
+
+        LocalDate profileExamDate = userServiceClient.getProfile(userId, TenantContext.get())
+                .map(InternalUserProfileDto::examDate)
+                .orElse(null);
+
+        if (profileExamDate != null && !Objects.equals(plan.getExamDate(), profileExamDate)) {
+            LOG.warn("Study plan examDate drift detected: userId={} productCode={} planExamDate={} "
+                            + "profileExamDate={}, regenerating",
+                    userId, productCode, plan.getExamDate(), profileExamDate);
+            driftCounter(productCode, TenantContext.get()).increment();
+            // Fail-soft: if regeneration throws (Strapi unreachable, readiness transient error,
+            // DB contention), return the stored plan rather than failing the whole read. The
+            // drift is recorded in the metric; the Kafka consumer path and the next GET will
+            // retry. A stale examDate is a better user-facing outcome than a 500.
+            try {
+                generatePlan(userId,
+                        new GenerateStudyPlanRequest(productCode, profileExamDate, null),
+                        RECONCILE_DEFAULT_LOCALE);
+                plan = loadActivePlan(userId, productCode);
+            } catch (RuntimeException e) {
+                LOG.warn("Failed to reconcile stale study plan, returning stored plan unchanged: "
+                                + "userId={} productCode={} error={}",
+                        userId, productCode, e.toString());
+            }
+        }
+
+        return loadActivePlanWithDays(plan);
+    }
+
+    @Transactional(readOnly = true)
+    public StudyPlan loadActivePlan(@Nonnull UUID userId, @Nonnull String productCode) {
+        return planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
                         userId, productCode, PlanStatus.ACTIVE)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.PLAN_NOT_FOUND, "No active study plan found"));
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, ErrorCode.PLAN_NOT_FOUND,
+                        "No active study plan found"));
+    }
 
+    @Transactional(readOnly = true)
+    public StudyPlanDto loadActivePlanWithDays(@Nonnull StudyPlan plan) {
         List<StudyPlanDay> days = planDayRepository.findByPlanIdOrderByDayNumberAsc(plan.getId());
-
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         int currentDay = days.stream()
                 .filter(d -> !d.getPlanDate().isAfter(today))
                 .mapToInt(StudyPlanDay::getDayNumber)
                 .max().orElse(1);
-
         return toPlanDto(plan, days, currentDay);
+    }
+
+    private Counter driftCounter(String productCode, UUID tenantId) {
+        return Counter.builder("passtheo_study_plan_drift_detected_total")
+                .description("Count of GET /api/study-plan calls that detected and auto-repaired a stale plan examDate")
+                .tag("productCode", productCode == null ? "unknown" : productCode)
+                .tag("tenantId", tenantId == null ? "unknown" : tenantId.toString())
+                .register(meterRegistry);
     }
 
     /**

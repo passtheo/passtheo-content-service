@@ -1,6 +1,7 @@
 package com.passtheo.content;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.intuit.karate.junit5.Karate;
 import com.passtheo.content.config.TestSchedulingConfig;
@@ -98,6 +99,66 @@ class KarateRunner {
         runFlywayMigrations();
         seedRedisEntitlements();
         configureStrapiMocks();
+        configureUserServiceMocks();
+    }
+
+    /**
+     * Registers priority-1 WireMock stubs per user for deterministic
+     * {@code GET /internal/users/{id}/profile} responses.
+     *
+     * <p>Why this exists: the file-based contract stubs in
+     * {@code contracts/user-service/mappings/} share a URL pattern that
+     * matches <em>any</em> UUID, so without explicit per-user priority
+     * the 200/404 stubs win non-deterministically — which quietly changes
+     * {@code computePlan}'s fallback behaviour between runs and breaks
+     * tests that assert a specific {@code totalDays} or {@code examDate}.
+     *
+     * <p>Two users get explicit behaviour:
+     * <ul>
+     *   <li>{@code 33333333-...} (paidUser) → 404: the default-30-days test
+     *       and other paid-user scenarios were written against "no profile"
+     *       fallback; pin that behaviour here.
+     *   <li>{@code 44444444-...} (drift test only) → verified profile with
+     *       {@code examDate=2026-05-15}: required by the reconcile-on-read
+     *       drift scenario.
+     * </ul>
+     */
+    private void configureUserServiceMocks() {
+        USER_SERVICE_MOCK.stubFor(WireMock.get(WireMock.urlPathEqualTo(
+                        "/internal/users/33333333-3333-3333-3333-333333333333/profile"))
+                .atPriority(1)
+                .willReturn(WireMock.aResponse()
+                        .withStatus(404)
+                        .withHeader("Content-Type", "application/problem+json")
+                        .withBody("""
+                                {
+                                  "type": "https://api.passtheo.nl/errors/user-not-found",
+                                  "title": "User not found",
+                                  "status": 404,
+                                  "detail": "User not found: 33333333-3333-3333-3333-333333333333"
+                                }
+                                """)));
+
+        String driftUserVerifiedBody = """
+                {
+                  "success": true,
+                  "data": {
+                    "keycloakUserId": "44444444-4444-4444-4444-444444444444",
+                    "email": "drift-test@example.com",
+                    "emailVerified": true,
+                    "emailVerifiedAt": "2026-03-01T10:00:00Z",
+                    "examDate": "2026-05-15",
+                    "tenantId": "11111111-1111-1111-1111-111111111111"
+                  }
+                }
+                """;
+        USER_SERVICE_MOCK.stubFor(WireMock.get(WireMock.urlPathEqualTo(
+                        "/internal/users/44444444-4444-4444-4444-444444444444/profile"))
+                .atPriority(1)
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(driftUserVerifiedBody)));
     }
 
     private void runFlywayMigrations() {

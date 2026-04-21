@@ -12,6 +12,7 @@ import com.passtheo.content.repository.StreakRepository;
 import com.passtheo.content.repository.StudyPlanRepository;
 import com.passtheo.content.repository.TopicProgressRepository;
 import com.passtheo.content.service.StudyPlanService;
+import com.passtheo.shared.core.client.UserServiceInternalClient;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,7 @@ class UserEventConsumerTest {
     @Mock private ReadinessSnapshotRepository snapshotRepository;
     @Mock private StudyPlanRepository planRepository;
     @Mock private StudyPlanService studyPlanService;
+    @Mock private UserServiceInternalClient userServiceClient;
     @Mock private Acknowledgment ack;
 
     private UserEventConsumer consumer;
@@ -59,7 +61,7 @@ class UserEventConsumerTest {
         consumer = new UserEventConsumer(objectMapper,
                 progressRepository, topicProgressRepository, domainProgressRepository,
                 streakRepository, achievementRepository, examAttemptRepository,
-                snapshotRepository, planRepository, studyPlanService);
+                snapshotRepository, planRepository, studyPlanService, userServiceClient);
     }
 
     @Test
@@ -154,6 +156,29 @@ class UserEventConsumerTest {
                 ArgumentCaptor.forClass(GenerateStudyPlanRequest.class);
         verify(studyPlanService).generatePlan(eq(USER_ID), requestCaptor.capture(), eq("nl"));
         assertThat(requestCaptor.getValue().examDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void onUserExamDateSet_evictsUserProfileCacheBeforeRegenerating() {
+        String payload = """
+                {
+                  "eventType": "UserExamDateSet",
+                  "tenantId": "%s",
+                  "keycloakUserId": "%s",
+                  "productCode": "auto-b",
+                  "examDate": "2026-09-01"
+                }
+                """.formatted(TENANT_ID, USER_ID);
+        ConsumerRecord<String, String> record = kafkaRecord(payload);
+
+        consumer.onUserEvent(record, ack);
+
+        // Eviction must happen so computePlan's fallback branch inside generatePlan cannot
+        // read a stale cached profile while the Redis TTL (5 min) has not yet expired.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userServiceClient, studyPlanService);
+        order.verify(userServiceClient).evictCache(USER_ID, TENANT_ID);
+        order.verify(studyPlanService).generatePlan(eq(USER_ID), any(), eq("nl"));
         verify(ack).acknowledge();
     }
 
