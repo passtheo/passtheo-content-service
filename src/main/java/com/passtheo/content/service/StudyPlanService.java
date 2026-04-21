@@ -363,14 +363,24 @@ public class StudyPlanService {
                 .orElse(null);
 
         if (profileExamDate != null && !Objects.equals(plan.getExamDate(), profileExamDate)) {
-            LOG.warn("study plan examDate drift detected: userId={} productCode={} planExamDate={} "
+            LOG.warn("Study plan examDate drift detected: userId={} productCode={} planExamDate={} "
                             + "profileExamDate={}, regenerating",
                     userId, productCode, plan.getExamDate(), profileExamDate);
             driftCounter(productCode, TenantContext.get()).increment();
-            generatePlan(userId,
-                    new GenerateStudyPlanRequest(productCode, profileExamDate, null),
-                    RECONCILE_DEFAULT_LOCALE);
-            plan = loadActivePlan(userId, productCode);
+            // Fail-soft: if regeneration throws (Strapi unreachable, readiness transient error,
+            // DB contention), return the stored plan rather than failing the whole read. The
+            // drift is recorded in the metric; the Kafka consumer path and the next GET will
+            // retry. A stale examDate is a better user-facing outcome than a 500.
+            try {
+                generatePlan(userId,
+                        new GenerateStudyPlanRequest(productCode, profileExamDate, null),
+                        RECONCILE_DEFAULT_LOCALE);
+                plan = loadActivePlan(userId, productCode);
+            } catch (RuntimeException e) {
+                LOG.warn("Failed to reconcile stale study plan, returning stored plan unchanged: "
+                                + "userId={} productCode={} error={}",
+                        userId, productCode, e.toString());
+            }
         }
 
         return loadActivePlanWithDays(plan);

@@ -341,6 +341,35 @@ class StudyPlanServiceTest {
     }
 
     @Test
+    void getActivePlan_regenerationThrows_returnsStoredPlanUnchanged() {
+        // Drift is detected and the counter is incremented, but generatePlan throws
+        // (e.g., Strapi unreachable). The orchestrator must fall back to the stored plan
+        // rather than propagating the exception and returning 500 to the caller.
+        LocalDate stalePlanDate = LocalDate.of(2030, 12, 31);
+        LocalDate profileExamDate = LocalDate.of(2026, 6, 1);
+        StudyPlan stale = fakeActivePlan(stalePlanDate);
+
+        when(planRepository.findByKeycloakUserIdAndProductCodeAndStatus(
+                eq(USER_ID), eq(PRODUCT), eq(PlanStatus.ACTIVE)))
+                .thenReturn(Optional.of(stale));
+        when(userServiceClient.getProfile(eq(USER_ID), eq(TENANT_ID)))
+                .thenReturn(Optional.of(fakeProfile(profileExamDate)));
+        // Force generatePlan to fail by making its first repository read throw.
+        when(readinessService.calculate(eq(USER_ID), eq(PRODUCT), anyString()))
+                .thenThrow(new RuntimeException("readiness service unavailable"));
+        when(planDayRepository.findByPlanIdOrderByDayNumberAsc(stale.getId()))
+                .thenReturn(List.of());
+
+        StudyPlanDto result = service.getActivePlan(USER_ID, PRODUCT);
+
+        assertThat(result.planId()).isEqualTo(stale.getId());
+        assertThat(result.examDate()).isEqualTo(stalePlanDate);
+        // Metric still fires — drift was observed even though repair failed.
+        assertThat(meterRegistry.find("passtheo_study_plan_drift_detected_total")
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
     void getActivePlan_driftDetected_incrementsDriftCounterExactlyOnce() {
         LocalDate stalePlanDate = LocalDate.of(2030, 12, 31);
         LocalDate profileExamDate = LocalDate.of(2026, 6, 1);
