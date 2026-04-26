@@ -33,18 +33,29 @@ configurations {
 repositories {
     mavenLocal()
     mavenCentral()
+    maven {
+        name = "GitHubPackages-passtheo-shared-lib"
+        url  = uri("https://maven.pkg.github.com/passtheo/passtheo-shared-lib")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+                ?: project.findProperty("gpr.user") as String? ?: ""
+            password = System.getenv("PACKAGES_READ_TOKEN")
+                ?: System.getenv("GITHUB_TOKEN")
+                ?: project.findProperty("gpr.key") as String? ?: ""
+        }
+    }
 }
 
 dependencies {
     // PassTheo shared libraries
-    implementation("com.passtheo:shared-core:1.0.0-SNAPSHOT")
-    implementation("com.passtheo:shared-security:1.0.0-SNAPSHOT")
-    implementation("com.passtheo:shared-outbox:1.0.0-SNAPSHOT")
-    implementation("com.passtheo:shared-events:1.0.0-SNAPSHOT") {
+    implementation("com.passtheo:shared-core:1.0.0")
+    implementation("com.passtheo:shared-security:1.0.0")
+    implementation("com.passtheo:shared-outbox:1.0.0")
+    implementation("com.passtheo:shared-events:1.0.0") {
         exclude(group = "org.lz4", module = "lz4-java")
         exclude(group = "at.yawk.lz4", module = "lz4-java")
     }
-    testImplementation("com.passtheo:shared-testing:1.0.0-SNAPSHOT") {
+    testImplementation("com.passtheo:shared-testing:1.0.0") {
         exclude(group = "org.lz4", module = "lz4-java")
         exclude(group = "at.yawk.lz4", module = "lz4-java")
     }

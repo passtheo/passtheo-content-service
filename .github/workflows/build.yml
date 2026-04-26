@@ -1,0 +1,266 @@
+# =============================================================================
+# Vendored from passtheo/ci-workflows: templates/spring-boot-service.yml
+# Do not hand-edit. The verify-sync workflow flags drift.
+# To change CI behavior: edit the template upstream and re-run sync-to-services.
+# =============================================================================
+#
+# Job DAG:
+#
+#   lint-and-test  ──→  build-jar  ──┐
+#                                    ├──→  docker-build  ──┐
+#   compute-tag  ────────────────────┘                     ├──→  dispatch-infra
+#   compute-tag  ──────────────────────────────────────────┘
+#
+# Per-event execution:
+#   push develop          → lint-and-test only
+#   pull_request          → lint-and-test, compute-tag, build-jar, docker-build (load only, no push)
+#   pull_request +ci:full → lint-and-test, compute-tag, build-jar, docker-build (push pr-<n>-<sha>)
+#   push tag <svc>/v*     → all jobs; image pushed; dispatch-infra fires bump in passtheo/infra
+#   workflow_dispatch     → compute-tag, dispatch-infra (replay an existing tag to a target env)
+# =============================================================================
+
+name: build
+
+on:
+  push:
+    branches: [develop]
+    tags: ['passtheo-content-service/v*']
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    branches: [develop]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Existing image tag (e.g. v1.2.3-a1b2c3d). Replays without rebuilding.'
+        required: true
+      target_env:
+        description: 'Target env'
+        required: true
+        type: choice
+        options: [dev, stg, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint + unit tests. Runs on every event.
+  # ---------------------------------------------------------------------------
+  lint-and-test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/develop' }}
+          # gradle/actions@v4 ships an allowlist of wrapper SHAs. Recent
+          # Gradle versions (e.g. 8.14) lag the allowlist; private-repo
+          # security ROI of this check is low — disabling avoids stale-list
+          # blockages. Re-enable when the allowlist catches up.
+          validate-wrappers: false
+      - name: Run tests
+        # PACKAGES_READ_TOKEN: org PAT with read:packages on passtheo/* —
+        # needed by build.gradle.kts to fetch shared-lib from GitHub Packages
+        # (default GITHUB_TOKEN is scoped to this repo and can't read packages
+        # owned by passtheo-shared-lib).
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+        run: ./gradlew test --no-daemon --console=plain
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-passtheo-content-service
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Compute image tag. Skipped on develop pushes (no image is built/pushed).
+  # ---------------------------------------------------------------------------
+  compute-tag:
+    name: Compute image tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+      github.event_name == 'workflow_dispatch'
+    outputs:
+      image-tag: ${{ steps.calc.outputs.image-tag }}
+      should-push: ${{ steps.calc.outputs.should-push }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - id: calc
+        env:
+          OVERRIDE: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          if [[ -n "${OVERRIDE}" ]]; then
+            IMAGE_TAG="${OVERRIDE}"
+            SHOULD_PUSH="false"
+          elif [[ "${GITHUB_REF}" == "refs/tags/passtheo-content-service/v"* ]]; then
+            SEMVER="${GITHUB_REF#"refs/tags/passtheo-content-service/"}"
+            if [[ ! "${SEMVER}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+              echo "::error::Tag ${GITHUB_REF} does not match v<semver>" >&2; exit 1
+            fi
+            IMAGE_TAG="${SEMVER}-${SHORT_SHA}"
+            SHOULD_PUSH="true"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            IMAGE_TAG="pr-${PR_NUMBER}-${SHORT_SHA}"
+            HAS_LABEL='${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}'
+            [[ "${HAS_LABEL}" == "true" ]] && SHOULD_PUSH="true" || SHOULD_PUSH="false"
+          else
+            echo "::error::Unhandled trigger" >&2; exit 1
+          fi
+          echo "image-tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "should-push=${SHOULD_PUSH}" >> "$GITHUB_OUTPUT"
+          echo "Resolved image-tag=${IMAGE_TAG} should-push=${SHOULD_PUSH}"
+
+  # ---------------------------------------------------------------------------
+  # Build Spring Boot JAR.
+  # ---------------------------------------------------------------------------
+  build-jar:
+    name: Build JAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint-and-test
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+          validate-wrappers: false
+      - name: Build bootJar
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+        run: ./gradlew bootJar -x test --no-daemon --console=plain
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-passtheo-content-service
+          path: build/libs/passtheo-content-service.jar
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Docker build (and push if appropriate). Push only on tag releases and on
+  # PRs labeled ci:full.
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker build / push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build-jar, compute-tag]
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: jar-passtheo-content-service
+          path: build/libs
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to registry
+        if: needs.compute-tag.outputs.should-push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: registry.passtheo.com
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ needs.compute-tag.outputs.should-push == 'true' }}
+          load: ${{ needs.compute-tag.outputs.should-push != 'true' }}
+          tags: registry.passtheo.com/passtheo-content-service:${{ needs.compute-tag.outputs.image-tag }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=passtheo-content-service
+          cache-to: type=gha,scope=passtheo-content-service,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            GIT_COMMIT=${{ github.sha }}
+            SERVICE_NAME=passtheo-content-service
+            SERVICE_VERSION=${{ needs.compute-tag.outputs.image-tag }}
+          provenance: false
+
+  # ---------------------------------------------------------------------------
+  # Fire repository_dispatch into passtheo/infra to bump values.yaml.
+  # Only on release tags or workflow_dispatch.
+  # ---------------------------------------------------------------------------
+  dispatch-infra:
+    name: Dispatch infra image-tag bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    needs: [compute-tag, docker-build]
+    if: |
+      always() &&
+      needs.compute-tag.result == 'success' &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.docker-build.result == 'success') ||
+        (github.event_name == 'workflow_dispatch')
+      )
+    concurrency:
+      group: dispatch-infra-passtheo-content-service-${{ inputs.target_env || 'dev' }}
+      cancel-in-progress: false
+    steps:
+      - id: env
+        env:
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+          INPUT_ENV: ${{ inputs.target_env || 'dev' }}
+        run: |
+          if [[ "${IS_TAG}" == "true" ]]; then
+            echo "target-env=dev" >> "$GITHUB_OUTPUT"
+          else
+            case "${INPUT_ENV}" in
+              dev|stg|prod) echo "target-env=${INPUT_ENV}" >> "$GITHUB_OUTPUT" ;;
+              *) echo "::error::Invalid target_env ${INPUT_ENV}" >&2; exit 1 ;;
+            esac
+          fi
+      - env:
+          GH_TOKEN: ${{ secrets.INFRA_DISPATCH_TOKEN }}
+          IMAGE_TAG: ${{ needs.compute-tag.outputs.image-tag }}
+          TARGET_ENV: ${{ steps.env.outputs.target-env }}
+          DISPATCHER_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/passtheo/infra/dispatches \
+            -f event_type=bump-image-tag \
+            -F "client_payload[service]=passtheo-content-service" \
+            -F "client_payload[image_tag]=${IMAGE_TAG}" \
+            -F "client_payload[target_env]=${TARGET_ENV}" \
+            -F "client_payload[dispatcher_run_url]=${DISPATCHER_RUN}"
+          echo "Dispatched bump-image-tag to passtheo/infra: passtheo-content-service -> ${TARGET_ENV} @ ${IMAGE_TAG}"

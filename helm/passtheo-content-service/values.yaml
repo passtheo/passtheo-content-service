@@ -1,0 +1,59 @@
+replicaCount: 2
+
+image:
+  repository: registry.passtheo.com/passtheo-content-service
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 8087
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+env:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgresql:5432/passtheo
+  SPRING_DATASOURCE_USERNAME: content_service_app
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/passtheo
+
+secrets:
+  SPRING_DATASOURCE_PASSWORD: password
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8087
+  initialDelaySeconds: 60
+  periodSeconds: 15
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8087
+  initialDelaySeconds: 30
+  periodSeconds: 10
