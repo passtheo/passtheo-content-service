@@ -175,6 +175,14 @@ jobs:
   # ---------------------------------------------------------------------------
   # Docker build (and push if appropriate). Push only on tag releases and on
   # PRs labeled ci:full.
+  #
+  # Push uses the chunked-upload script from infra/cloudflare-registry/push,
+  # not buildx's native push, because Cloudflare's edge proxy caps any single
+  # request body at 100 MiB on Free/Pro/Business plans. Distroless+jlink+
+  # Spring Boot fat-jar layers regularly exceed that. The script speaks the
+  # OCI distribution-spec PATCH-then-PUT chunked-upload flow, respects the
+  # Worker's advertised OCI-Chunk-Max-Length (100 MB), and pushes each chunk
+  # under the edge cap.
   # ---------------------------------------------------------------------------
   docker-build:
     name: Docker build / push
@@ -192,18 +200,12 @@ jobs:
           name: jar-passtheo-content-service
           path: build/libs
       - uses: docker/setup-buildx-action@v3
-      - name: Log in to registry
-        if: needs.compute-tag.outputs.should-push == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: registry.passtheo.com
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-      - uses: docker/build-push-action@v6
+      - name: Build image (load to local Docker daemon)
+        uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ needs.compute-tag.outputs.should-push == 'true' }}
-          load: ${{ needs.compute-tag.outputs.should-push != 'true' }}
+          push: false
+          load: true
           tags: registry.passtheo.com/passtheo-content-service:${{ needs.compute-tag.outputs.image-tag }}
           platforms: linux/amd64
           cache-from: type=gha,scope=passtheo-content-service
@@ -214,6 +216,32 @@ jobs:
             SERVICE_NAME=passtheo-content-service
             SERVICE_VERSION=${{ needs.compute-tag.outputs.image-tag }}
           provenance: false
+      # Chunked push only on tag releases / ci:full PRs. Skipped otherwise.
+      # The push script lives at .github/ci-vendor/registry-push/ — vendored
+      # in by passtheo/ci-workflows scripts/sync-to-services.sh from
+      # passtheo/ci-workflows:vendor/spring-boot-service/.
+      - name: Set up Bun
+        if: needs.compute-tag.outputs.should-push == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+      - name: Push image (chunked, JWT-as-Basic-password)
+        if: needs.compute-tag.outputs.should-push == 'true'
+        # REGISTRY_JWT: long-lived ci_push JWT minted by
+        # infra/cloudflare-registry/scripts/mint-token.js. Stored as
+        # SOPS-encrypted secret in infra/secrets/dev/registry/tokens.enc.yaml
+        # under key `ci_push`. The push script wraps it in a Basic header
+        # because the Worker's auth path strictly requires the Basic scheme
+        # (serverless-registry/src/auth.ts:38) and treats the password as
+        # a JWT.
+        env:
+          REGISTRY_JWT: ${{ secrets.REGISTRY_JWT }}
+          IMAGE: registry.passtheo.com/passtheo-content-service:${{ needs.compute-tag.outputs.image-tag }}
+        working-directory: .github/ci-vendor/registry-push
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          echo "$REGISTRY_JWT" | bun run index.ts "$IMAGE"
 
   # ---------------------------------------------------------------------------
   # Fire repository_dispatch into passtheo/infra to bump values.yaml.
