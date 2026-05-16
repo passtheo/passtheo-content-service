@@ -32,19 +32,46 @@ public record LessonDto(
     /**
      * A structured section within a lesson.
      *
-     * @param heading             section heading
-     * @param body                section body text
-     * @param tip                 optional tip callout
-     * @param keyRule             optional key rule summary
-     * @param relatedRoadSignCode optional related road sign reference
-     * @param sortOrder           display sort order
+     * @param heading  section heading
+     * @param body     section body text
+     * @param tip      optional tip callout
+     * @param warning  optional warning callout (exam traps, common mistakes)
+     * @param keyRule  optional key rule summary
+     * @param image    optional image with caption + alt text
+     * @param roadSign optional reference to a road sign (by code + name)
      */
     public record LessonSectionDto(
         String heading,
         String body,
         String tip,
+        String warning,
         String keyRule,
-        String relatedRoadSignCode,
-        Integer sortOrder
+        SectionImageDto image,
+        RoadSignRefDto roadSign
+    ) { }
+
+    /**
+     * Image attached to a lesson section.
+     *
+     * @param url     absolute or relative URL of the underlying file
+     * @param caption optional localized caption rendered below the image
+     * @param alt     optional localized alternative text for accessibility
+     */
+    public record SectionImageDto(
+        String url,
+        String caption,
+        String alt
+    ) { }
+
+    /**
+     * Road-sign reference attached to a lesson section. Carries the minimum
+     * fields a client needs to render and link to the full sign.
+     *
+     * @param code stable road-sign code (e.g. "B1", "B6")
+     * @param name localized road-sign display name
+     */
+    public record RoadSignRefDto(
+        String code,
+        String name
     ) { }
 }
