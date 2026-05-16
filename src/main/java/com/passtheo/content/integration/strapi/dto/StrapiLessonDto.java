@@ -34,7 +34,7 @@ public record StrapiLessonDto(
         String warning,
         String keyRule,
         SectionImageDto image,
-        RoadSignRefDto roadSign
+        List<RoadSignRefDto> roadSigns
     ) {}
 
     /**
@@ -50,7 +50,7 @@ public record StrapiLessonDto(
 
     /**
      * Trimmed road-sign reference populated alongside a lesson section's
-     * {@code roadSign} relation. Only the identifying fields are kept — the
+     * {@code roadSigns} relation. Only the identifying fields are kept — the
      * client can resolve the full sign by {@code code} via the road-sign
      * collection endpoint when needed.
      */

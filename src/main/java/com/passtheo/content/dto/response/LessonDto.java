@@ -32,13 +32,14 @@ public record LessonDto(
     /**
      * A structured section within a lesson.
      *
-     * @param heading  section heading
-     * @param body     section body text
-     * @param tip      optional tip callout
-     * @param warning  optional warning callout (exam traps, common mistakes)
-     * @param keyRule  optional key rule summary
-     * @param image    optional image with caption + alt text
-     * @param roadSign optional reference to a road sign (by code + name)
+     * @param heading   section heading
+     * @param body      section body text
+     * @param tip       optional tip callout
+     * @param warning   optional warning callout (exam traps, common mistakes)
+     * @param keyRule   optional key rule summary
+     * @param image     optional image with caption + alt text
+     * @param roadSigns zero or more road-sign references (code + name). Never
+     *                  {@code null} — empty list when no signs are linked.
      */
     public record LessonSectionDto(
         String heading,
@@ -47,7 +48,7 @@ public record LessonDto(
         String warning,
         String keyRule,
         SectionImageDto image,
-        RoadSignRefDto roadSign
+        List<RoadSignRefDto> roadSigns
     ) { }
 
     /**
