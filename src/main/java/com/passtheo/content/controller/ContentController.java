@@ -383,7 +383,7 @@ public class ContentController {
                 .toList();
     }
 
-    private static LessonSectionDto toLessonSectionDto(@Nonnull StrapiLessonDto.SectionDto s) {
+    static LessonSectionDto toLessonSectionDto(@Nonnull StrapiLessonDto.SectionDto s) {
         SectionImageDto image = null;
         if (s.image() != null && s.image().file() != null) {
             image = new SectionImageDto(s.image().file().url(), s.image().caption(), s.image().alt());
