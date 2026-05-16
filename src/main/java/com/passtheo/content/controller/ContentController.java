@@ -388,12 +388,13 @@ public class ContentController {
         if (s.image() != null && s.image().file() != null) {
             image = new SectionImageDto(s.image().file().url(), s.image().caption(), s.image().alt());
         }
-        RoadSignRefDto roadSign = null;
-        if (s.roadSign() != null) {
-            roadSign = new RoadSignRefDto(s.roadSign().code(), s.roadSign().name());
-        }
+        List<RoadSignRefDto> roadSigns = s.roadSigns() == null ? List.of()
+                : s.roadSigns().stream()
+                        .filter(Objects::nonNull)
+                        .map(r -> new RoadSignRefDto(r.code(), r.name()))
+                        .toList();
         return new LessonSectionDto(
                 s.heading(), s.body(), s.tip(), s.warning(), s.keyRule(),
-                image, roadSign);
+                image, roadSigns);
     }
 }
