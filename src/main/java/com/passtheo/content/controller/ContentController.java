@@ -7,6 +7,9 @@ import com.passtheo.content.dto.response.CountryDto;
 import com.passtheo.content.dto.response.DomainWithProgressDto;
 import com.passtheo.content.dto.response.LessonDto;
 import com.passtheo.content.dto.response.LessonDto.LessonSectionDto;
+import com.passtheo.content.dto.response.LessonDto.RoadSignRefDto;
+import com.passtheo.content.dto.response.LessonDto.SectionImageDto;
+import com.passtheo.content.integration.strapi.dto.StrapiLessonDto;
 import com.passtheo.content.dto.response.OnboardingCatalogDto;
 import com.passtheo.content.dto.response.ProductDto;
 import com.passtheo.content.dto.response.ProductTypeDto;
@@ -371,14 +374,26 @@ public class ContentController {
                             l.title(), l.slug(),
                             l.sections() != null ? l.sections().stream()
                                     .filter(Objects::nonNull)
-                                    .map(s -> new LessonSectionDto(
-                                            s.heading(), s.body(), s.tip(),
-                                            s.keyRule(), s.relatedRoadSignCode(), s.sortOrder()))
+                                    .map(ContentController::toLessonSectionDto)
                                     .toList() : List.of(),
                             l.summary(), l.coverImage(), l.videoUrl(), l.readTimeMinutes(),
                             l.isPremium(),
                             false);
                 })
                 .toList();
+    }
+
+    private static LessonSectionDto toLessonSectionDto(@Nonnull StrapiLessonDto.SectionDto s) {
+        SectionImageDto image = null;
+        if (s.image() != null && s.image().file() != null) {
+            image = new SectionImageDto(s.image().file().url(), s.image().caption(), s.image().alt());
+        }
+        RoadSignRefDto roadSign = null;
+        if (s.roadSign() != null) {
+            roadSign = new RoadSignRefDto(s.roadSign().code(), s.roadSign().name());
+        }
+        return new LessonSectionDto(
+                s.heading(), s.body(), s.tip(), s.warning(), s.keyRule(),
+                image, roadSign);
     }
 }
